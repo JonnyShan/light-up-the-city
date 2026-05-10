@@ -262,10 +262,10 @@
     position: absolute;
     bottom: 0; left: 0; right: 0;
     z-index: 20;
-    padding: 6px 14px 6px;
+    padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 6px);
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 8px;
     pointer-events: none;
     background: linear-gradient(0deg, rgba(4,0,22,0.95) 30%, transparent 100%);
   }
@@ -273,29 +273,29 @@
   .colors {
     display: flex;
     justify-content: center;
-    gap: 6px;
+    gap: 10px;
     pointer-events: auto;
   }
 
   .color-swatch {
-    width: 19px;
-    height: 19px;
+    width: 36px;          /* mobile tap-target (Apple HIG 44px ideal, 36px workable) */
+    height: 36px;
     border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.25);
     cursor: pointer;
     position: relative;
     transition: transform 0.1s;
   }
-  .color-swatch.active { transform: scale(1.18); border-color: #fff; box-shadow: 0 0 0 1px rgba(255,255,255,0.5); }
-  .color-swatch.rainbow::after { box-shadow: 0 0 9px #ff2bd6, 0 0 12px #00f0ff, 0 0 6px #ffd23f; opacity: 0.6; }
+  .color-swatch.active { transform: scale(1.20); border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,0.55); }
+  .color-swatch.rainbow::after { box-shadow: 0 0 12px #ff2bd6, 0 0 18px #00f0ff, 0 0 10px #ffd23f; opacity: 0.6; }
   @keyframes rainbow-spin { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
   .color-swatch::after {
     content: '';
     position: absolute;
     inset: -4px;
     border-radius: 50%;
-    box-shadow: 0 0 14px currentColor;
-    opacity: 0.8;
+    box-shadow: 0 0 16px currentColor;
+    opacity: 0.7;
     pointer-events: none;
   }
 
@@ -303,21 +303,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 10px;
     pointer-events: auto;
     color: var(--neon-cyan);
-    font-size: 9px;
-    letter-spacing: 1px;
+    font-size: 11px;
+    letter-spacing: 2px;
     font-weight: bold;
     text-shadow: 0 0 4px var(--neon-cyan);
   }
   .brush-row input[type=range] {
     flex: 1;
-    max-width: 200px;
+    max-width: 260px;
     accent-color: var(--neon-pink);
-    height: 4px;
+    height: 6px;
   }
-  .brush-val { min-width: 18px; text-align: right; color: var(--neon-pink); text-shadow: 0 0 4px var(--neon-pink); }
+  .brush-val { min-width: 22px; text-align: right; color: var(--neon-pink); text-shadow: 0 0 4px var(--neon-pink); font-size: 12px; }
 
   #tooltip {
     position: absolute;
@@ -687,9 +687,8 @@
         <source src="intro_scan_lights_loop.mp4" type="video/mp4">
       </video>
       <div class="intro-scanlines"></div>
-      <div class="intro-content">
-        <div class="intro-cta">Tap To Begin</div>
-      </div>
+      <!-- No CTA text — tap anywhere starts game -->
+      <div class="intro-content"></div>
     </div>
 
     <div class="overlay hidden" id="achievement">
