@@ -548,8 +548,8 @@
       <div class="colors" id="colors"></div>
       <div class="brush-row">
         <span class="brush-label">BRUSH</span>
-        <input type="range" id="brush-slider" min="1" max="30" value="12" />
-        <span class="brush-val" id="brush-val">12</span>
+        <input type="range" id="brush-slider" min="1" max="10" value="3" />
+        <span class="brush-val" id="brush-val">3</span>
       </div>
     </div>
 
@@ -652,7 +652,7 @@
     litFraction: 0,
     litLastSampled: 0,
     achievementShown: false,
-    brushRadius: 12,       // #5 — adjustable via slider
+    brushRadius: 3,        // adjustable 1-10 via slider
     fireworks: [],         // #3 — milestone bursts
     milestonesHit: new Set(), // tracks which thresholds fired
     lastHeli: 0,           // #13 — helicopter timer
@@ -962,19 +962,7 @@
     }
     return false;
   }
-  canvas.addEventListener('pointerdown', e => {
-    const r = canvas.getBoundingClientRect();
-    const x = e.clientX - r.left, y = e.clientY - r.top;
-    clearTimeout(holdTimer);
-    holdTimer = setTimeout(() => {
-      if (showLandmarkTooltip(x, y)) {
-        // Cancel the paint by removing pointer
-        state.pointers.delete(e.pointerId);
-      }
-    }, 450);
-  });
-  canvas.addEventListener('pointerup', () => clearTimeout(holdTimer));
-  canvas.addEventListener('pointercancel', () => clearTimeout(holdTimer));
+  // Landmark naming disabled — no tooltips on long-press
 
   // #1 — Cascade triggered on tap in virgin tower (first paint of stroke)
   let lastCascadeX = -999, lastCascadeY = -999;
