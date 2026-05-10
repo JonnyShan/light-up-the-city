@@ -367,6 +367,86 @@
     5%, 15% { opacity: 0.6; }
     10% { opacity: 0; }
   }
+  #ta-btn {
+    position: absolute;
+    bottom: 86px; right: 14px;
+    z-index: 22;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(26,5,51,0.7);
+    border: 1px solid var(--neon-yellow);
+    color: var(--neon-yellow);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-shadow: 0 0 6px var(--neon-yellow);
+    box-shadow: 0 0 10px rgba(255,210,63,0.4);
+    cursor: pointer;
+  }
+  #ta-btn:active { transform: scale(0.92); }
+  #ta-overlay {
+    display: none;
+    position: absolute;
+    top: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 24;
+    padding: 6px 14px;
+    background: rgba(4,0,22,0.85);
+    border: 1px solid var(--neon-yellow);
+    border-radius: 24px;
+    color: var(--neon-yellow);
+    font-family: inherit;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-shadow: 0 0 6px var(--neon-yellow);
+    box-shadow: 0 0 12px rgba(255,210,63,0.4);
+    display: none;
+  }
+  #ta-overlay.show { display: flex; gap: 8px; align-items: baseline; }
+  #ta-overlay #ta-timer { font-size: 22px; }
+  #ta-overlay .ta-lbl { font-size: 10px; opacity: 0.8; }
+  #ta-result { z-index: 60; background: radial-gradient(ellipse at center, rgba(177,76,255,0.4) 0%, rgba(4,0,22,0.92) 70%); align-items: center; justify-content: center; }
+  #ta-result.show { display: flex; }
+  .ta-card {
+    background: linear-gradient(180deg, rgba(26,5,51,0.95), rgba(4,0,22,0.97));
+    border: 1px solid var(--neon-cyan);
+    border-radius: 16px;
+    padding: 26px 30px;
+    text-align: center;
+    box-shadow: 0 0 30px rgba(0,240,255,0.4);
+  }
+  .ta-eyebrow {
+    color: var(--neon-cyan);
+    font-size: 11px;
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+    text-shadow: 0 0 6px var(--neon-cyan);
+  }
+  .ta-score {
+    font-size: 56px;
+    font-weight: bold;
+    color: var(--neon-pink);
+    text-shadow: 0 0 12px var(--neon-pink), 0 0 24px var(--neon-pink);
+    letter-spacing: 2px;
+    margin: 4px 0 8px;
+  }
+  .ta-sub { font-size: 10px; letter-spacing: 2px; opacity: 0.7; margin-bottom: 18px; }
+  .ta-card button {
+    margin: 4px;
+    padding: 8px 16px;
+    background: rgba(0,240,255,0.15);
+    border: 1px solid var(--neon-cyan);
+    color: #fff;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 2px;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 6px;
+    text-shadow: 0 0 4px var(--neon-cyan);
+  }
+  .ta-card button:active { transform: scale(0.95); }
+
   .lightning-flash {
     position: absolute; inset: 0; z-index: 19;
     background: rgba(220,220,255,1);
@@ -561,6 +641,19 @@
 
     <!-- Brush size cursor preview ring -->
     <div id="brush-cursor"></div>
+
+    <!-- #9 Time Attack -->
+    <button id="ta-btn" title="Time Attack">TA</button>
+    <div id="ta-overlay"><span id="ta-timer">30.0</span><span class="ta-lbl">SECONDS</span></div>
+    <div id="ta-result" class="overlay hidden">
+      <div class="ta-card">
+        <div class="ta-eyebrow">TIME ATTACK</div>
+        <div class="ta-score">0%</div>
+        <div class="ta-sub">city lit in 30 seconds</div>
+        <button class="ta-again" id="ta-again">Try Again</button>
+        <button class="ta-close" id="ta-close">Done</button>
+      </div>
+    </div>
 
     <div class="overlay" id="title-screen">
       <div class="intro-eyebrow">A Vivid Sandbox</div>
@@ -1021,6 +1114,126 @@
     playBlip(60, 0.8, 'sawtooth', 0.08);
   }
 
+  // #15 — Shooting stars: rare meteor streak across upper sky
+  const shootingStars = []; // {x, y, vx, vy, life, ttl}
+  let nextShootingStar = 8 + Math.random() * 30;
+  function maybeShootingStar() {
+    if (state.time < nextShootingStar) return;
+    nextShootingStar = state.time + 20 + Math.random() * 50;
+    const fromLeft = Math.random() < 0.5;
+    shootingStars.push({
+      x: fromLeft ? -30 : W + 30,
+      y: 30 + Math.random() * (H * 0.25),
+      vx: fromLeft ? 260 + Math.random() * 80 : -(260 + Math.random() * 80),
+      vy: 60 + Math.random() * 50,
+      life: 0,
+      ttl: 0.9,
+    });
+  }
+  function updateShootingStars(dt) {
+    for (let i = shootingStars.length - 1; i >= 0; i--) {
+      const s = shootingStars[i];
+      s.life += dt;
+      if (s.life >= s.ttl) { shootingStars.splice(i, 1); continue; }
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+    }
+  }
+  function drawShootingStars() {
+    if (shootingStars.length === 0) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const s of shootingStars) {
+      const a = Math.max(0, 1 - s.life / s.ttl);
+      const tailLen = 24;
+      const tx = s.x - s.vx * 0.025;
+      const ty = s.y - s.vy * 0.025;
+      const grad = ctx.createLinearGradient(tx, ty, s.x, s.y);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.7, `rgba(255,255,255,${a * 0.55})`);
+      grad.addColorStop(1, `rgba(255,255,255,${a})`);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(s.x, s.y);
+      ctx.stroke();
+      // Bright head
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // #2 — Spotlight beam rotating from Sydney Tower top
+  function drawSpotlight() {
+    if (!imgFit.w) return;
+    // Tower top roughly at image coords (0.46, 0.20) → canvas coords via imgFit
+    const tx = imgFit.x + imgFit.w * 0.46;
+    const ty = imgFit.y + imgFit.h * 0.205;
+    // Rotation: 8s per full revolution
+    const ang = (state.time * (Math.PI * 2) / 8) % (Math.PI * 2);
+    // Two opposite cones
+    ctx.save();
+    ctx.translate(tx, ty);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < 2; k++) {
+      ctx.save();
+      ctx.rotate(ang + k * Math.PI);
+      const reach = Math.max(W, H) * 0.7;
+      const half = Math.PI * 0.05; // cone half-angle
+      const grad = ctx.createLinearGradient(0, 0, reach, 0);
+      grad.addColorStop(0, 'rgba(255,240,180,0.35)');
+      grad.addColorStop(0.5, 'rgba(255,240,180,0.10)');
+      grad.addColorStop(1, 'rgba(255,240,180,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(half) * reach, Math.sin(half) * reach);
+      ctx.lineTo(Math.cos(-half) * reach, Math.sin(-half) * reach);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // #9 — Time-attack mode (30s, score = % lit at end)
+  const timeAttack = {
+    active: false,
+    timeLeft: 0,
+    score: 0,
+  };
+  function startTimeAttack() {
+    resetSkyline();
+    timeAttack.active = true;
+    timeAttack.timeLeft = 30;
+    timeAttack.score = 0;
+    document.getElementById('ta-overlay').classList.add('show');
+    playBlip(440, 0.4, 'square', 0.12);
+  }
+  function endTimeAttack() {
+    timeAttack.active = false;
+    const pct = Math.round((state.litFraction || 0) * 100);
+    timeAttack.score = pct;
+    document.getElementById('ta-overlay').classList.remove('show');
+    // Show score modal
+    const m = document.getElementById('ta-result');
+    m.querySelector('.ta-score').textContent = pct + '%';
+    m.classList.add('show');
+    playBlip(220, 0.5, 'sine', 0.16);
+    setTimeout(() => playBlip(330, 0.5, 'sine', 0.16), 200);
+    setTimeout(() => playBlip(440, 0.6, 'sine', 0.16), 400);
+  }
+  function updateTimeAttack(dt) {
+    if (!timeAttack.active) return;
+    timeAttack.timeLeft -= dt;
+    document.getElementById('ta-timer').textContent = Math.max(0, timeAttack.timeLeft).toFixed(1);
+    if (timeAttack.timeLeft <= 0) endTimeAttack();
+  }
+
   // #9 — Aurora bands at 100% lit (reward)
   function drawAuroraFinale() {
     if ((state.litFraction || 0) < 0.95) return;
@@ -1239,6 +1452,28 @@
     titleScreen.classList.add('hidden');
     hintEl.classList.remove('fade');
     setTimeout(() => hintEl.classList.add('fade'), 4000);
+    // #11 — First-time hint overlay
+    if (!localStorage.getItem('lutc-seen-hint')) {
+      showFirstTimeHint();
+      localStorage.setItem('lutc-seen-hint', '1');
+    }
+  }
+  // #9 — Time Attack button wiring
+  document.getElementById('ta-btn').addEventListener('click', startTimeAttack);
+  document.getElementById('ta-btn').addEventListener('touchstart', e => { e.preventDefault(); startTimeAttack(); }, { passive: false });
+  document.getElementById('ta-again').addEventListener('click', () => {
+    document.getElementById('ta-result').classList.remove('show');
+    startTimeAttack();
+  });
+  document.getElementById('ta-close').addEventListener('click', () => {
+    document.getElementById('ta-result').classList.remove('show');
+  });
+  function showFirstTimeHint() {
+    const el = document.createElement('div');
+    el.innerHTML = '<div>DRAG TO PAINT</div><div>PICK COLOR ↓</div><div>SLIDE BRUSH SIZE ↓</div>';
+    el.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;background:rgba(4,0,22,0.55);backdrop-filter:blur(2px);z-index:45;pointer-events:none;font-family:Courier New,monospace;color:#fff;font-size:18px;font-weight:bold;letter-spacing:3px;text-shadow:0 0 8px var(--neon-cyan),0 0 16px var(--neon-pink);animation:tap-flash 4s ease-out forwards;';
+    document.getElementById('app').appendChild(el);
+    setTimeout(() => el.remove(), 4000);
   }
   titleScreen.addEventListener('click', start);
   titleScreen.addEventListener('touchstart', e => { e.preventDefault(); start(); }, { passive: false });
@@ -1337,7 +1572,8 @@
     drawParticles();
     // #3 — Fireworks (above everything except vignette)
     drawFireworks();
-    // #9 — Aurora finale at 100%
+    drawShootingStars();   // #15
+    drawSpotlight();       // #2
     drawAuroraFinale();
     applyVignette();
 
@@ -1555,18 +1791,21 @@
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const sliceCount = 24;
+    // #1 — Boosted brightness: saturate + brightness filter on water reflection
+    ctx.filter = 'saturate(1.8) brightness(1.6)';
+    const sliceCount = 28;
     const sliceH = reflectableH / sliceCount;
     for (let i = 0; i < sliceCount; i++) {
       const srcY = waterY - reflectableH + i * sliceH;
       const dstY = waterY + (sliceCount - 1 - i) * sliceH;
       if (dstY >= H) break;
-      // brighter near water line, fades down
-      const fade = Math.pow(1 - i / sliceCount, 1.4) * 1.0;
-      const jitter = Math.sin(state.time * 1.8 + i * 0.5) * 3;
-      ctx.globalAlpha = fade;
+      // Brighter near water line, slower falloff so reflections reach deeper into harbour
+      const fade = Math.pow(1 - i / sliceCount, 1.0) * 1.3;
+      const jitter = Math.sin(state.time * 1.8 + i * 0.5) * 4;
+      ctx.globalAlpha = Math.min(1, fade);
       ctx.drawImage(tempCanvas, 0, srcY, W, sliceH, jitter, dstY, W, Math.min(sliceH, H - dstY));
     }
+    ctx.filter = 'none';
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
@@ -1737,8 +1976,11 @@
     updateFireworks(dt);
     maybeSpawnHelicopter();
     updateHelicopters(dt);
-    updateCascades();   // #1
-    maybeLightning();   // #10
+    updateCascades();
+    maybeLightning();
+    maybeShootingStar();        // #15
+    updateShootingStars(dt);    // #15
+    updateTimeAttack(dt);       // #9
     render();
     requestAnimationFrame(loop);
   }
