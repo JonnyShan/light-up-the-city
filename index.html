@@ -511,7 +511,7 @@
       <div class="colors" id="colors"></div>
       <div class="brush-row">
         <span class="brush-label">BRUSH</span>
-        <input type="range" id="brush-slider" min="3" max="30" value="12" />
+        <input type="range" id="brush-slider" min="1" max="30" value="12" />
         <span class="brush-val" id="brush-val">12</span>
       </div>
     </div>
@@ -906,6 +906,7 @@
     if (y >= H * WATER_LINE) return;  // block painting on water
     const radius = state.brushRadius;  // #5 — slider-controlled
     const hex = state.selectedColor === 'rainbow' ? '#ffffff' : state.selectedColor;
+    // Color halo — soft falloff
     const grad = litCtx.createRadialGradient(x, y, 0, x, y, radius);
     grad.addColorStop(0, hex);
     grad.addColorStop(0.5, hex);
@@ -915,6 +916,19 @@
     litCtx.beginPath();
     litCtx.arc(x, y, radius, 0, Math.PI * 2);
     litCtx.fill();
+    // Hot white core — adds a 1-2px peak-bright pixel cluster at brush center.
+    // This makes single windows pop brighter than the color halo alone.
+    litCtx.globalCompositeOperation = 'lighter';
+    const coreR = Math.max(1, Math.min(radius * 0.35, 4));
+    const coreGrad = litCtx.createRadialGradient(x, y, 0, x, y, coreR);
+    coreGrad.addColorStop(0, '#ffffff');
+    coreGrad.addColorStop(0.5, hex);
+    coreGrad.addColorStop(1, hex + '00');
+    litCtx.fillStyle = coreGrad;
+    litCtx.beginPath();
+    litCtx.arc(x, y, coreR, 0, Math.PI * 2);
+    litCtx.fill();
+    litCtx.globalCompositeOperation = 'source-over';
 
     if (Math.random() < 0.35) {
       const partColor = state.selectedColor === 'rainbow'
@@ -1079,11 +1093,11 @@
     ctx.globalAlpha = 1;
     ctx.restore();
 
-    // #4 + #8 — crisp window edges with additive overlap blend
+    // #4 + #8 — crisp window edges with additive overlap blend, super-bright
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.globalCompositeOperation = 'lighter';
-    ctx.filter = 'saturate(1.6) brightness(1.4)';
+    ctx.filter = 'saturate(2.0) brightness(1.7) contrast(1.15)';
     ctx.drawImage(tempCanvas, 0, 0, W, H);
     ctx.filter = 'none';
     ctx.globalCompositeOperation = 'source-over';
