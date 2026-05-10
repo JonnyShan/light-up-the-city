@@ -497,18 +497,41 @@
   .overlay.hidden { display: none; }
 
   #title-screen {
-    background:
-      radial-gradient(ellipse at 50% 30%, rgba(255, 43, 214, 0.25) 0%, transparent 60%),
-      radial-gradient(ellipse at 50% 80%, rgba(0, 240, 255, 0.18) 0%, transparent 60%),
-      linear-gradient(180deg, #040016 0%, #0a0533 50%, #1a0a4a 100%);
+    background: #040016;
     cursor: pointer;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 40px 24px;
+    overflow: hidden;
   }
   #title-screen:active { filter: brightness(1.15); }
   #title-screen.hidden { display: none; }
+  #intro-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+  }
+  .intro-scanlines {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(180deg, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.18) 2px 3px),
+      radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(0,0,0,0.55) 100%);
+    mix-blend-mode: multiply;
+  }
+  .intro-content {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    text-align: center;
+    padding: 0 24px 96px;
+  }
 
   .intro-eyebrow {
     font-size: 11px;
@@ -657,11 +680,15 @@
     </div>
 
     <div class="overlay" id="title-screen">
-      <div class="intro-eyebrow">A Vivid Sandbox</div>
-      <div class="intro-title">Light Up<br/><span class="accent">The City</span></div>
-      <div class="intro-sub">Sydney · After Dark</div>
-      <div class="intro-cta">Tap To Begin</div>
-      <div class="intro-skyline">Drag · Light Windows · <span>Make Art</span></div>
+      <video id="intro-video" autoplay muted loop playsinline preload="auto"
+             poster="intro_scan_lights_poster.jpg">
+        <source src="intro_scan_lights_loop.webm" type="video/webm">
+        <source src="intro_scan_lights_loop.mp4" type="video/mp4">
+      </video>
+      <div class="intro-scanlines"></div>
+      <div class="intro-content">
+        <div class="intro-cta">Tap To Begin</div>
+      </div>
     </div>
 
     <div class="overlay hidden" id="achievement">
