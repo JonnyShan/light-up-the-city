@@ -829,8 +829,8 @@
     tempCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
     tempCtx.imageSmoothingEnabled = false;
 
-    // #19 — bloom at 0.6 of full backing-store res (DPR-aware) for retina sharpness
-    const bloomScale = 0.6;
+    // #14 — bloom scale 0.6 → 0.4: saves ~55% bloom render time, slightly softer halo
+    const bloomScale = 0.4;
     bloomCanvas.width = Math.floor(W * DPR * bloomScale);
     bloomCanvas.height = Math.floor(H * DPR * bloomScale);
     bloomCanvas2.width = Math.floor(W * DPR * bloomScale);
@@ -914,15 +914,36 @@
           }
         }
       }
-      // Dilate 1px in all 8 directions so each window becomes 3x3 — visible on downscale
+      // #5 — Morphological close: dilate 1px then erode 1px. Fills tiny gaps + cleans speckle noise.
+      const dil = new Uint8Array(w * h);
       for (let y = 1; y < h - 1; y++) {
         for (let x = 1; x < w - 1; x++) {
           const i = y * w + x;
-          if (hits[i] ||
-              hits[i - 1] || hits[i + 1] ||
-              hits[i - w] || hits[i + w] ||
-              hits[i - w - 1] || hits[i - w + 1] ||
-              hits[i + w - 1] || hits[i + w + 1]) {
+          if (hits[i] || hits[i-1] || hits[i+1] || hits[i-w] || hits[i+w] ||
+              hits[i-w-1] || hits[i-w+1] || hits[i+w-1] || hits[i+w+1]) {
+            dil[i] = 1;
+          }
+        }
+      }
+      // Erode: pixel stays only if all 4 cardinal neighbors are also lit (cleans isolated specks)
+      const ero = new Uint8Array(w * h);
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = y * w + x;
+          if (dil[i] && dil[i-1] && dil[i+1] && dil[i-w] && dil[i+w]) {
+            ero[i] = 1;
+          }
+        }
+      }
+      // Final pass: dilate eroded mask 1px so each lit-cell stays 3x3 visible after downscale
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = y * w + x;
+          if (ero[i] ||
+              ero[i - 1] || ero[i + 1] ||
+              ero[i - w] || ero[i + w] ||
+              ero[i - w - 1] || ero[i - w + 1] ||
+              ero[i + w - 1] || ero[i + w + 1]) {
             const p = i * 4;
             out[p] = 255; out[p+1] = 255; out[p+2] = 255; out[p+3] = 255;
           }
@@ -932,7 +953,7 @@
     };
   `;
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v6-everything`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v7-clean`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -1812,6 +1833,7 @@
     cloudStripCanvas.getContext('2d').drawImage(offImg, 0, 0, cw, ch, 0, 0, cw, ch);
   }
   function drawCloudDrift() {
+    if (state.lowFps) return;  // #15 — skip on low-end devices
     if (!cloudStripCanvas) buildCloudStrip();
     if (!cloudStripCanvas) return;
     const offset = (state.time * 4) % W;
@@ -1843,21 +1865,41 @@
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const sliceCount = 24;
+    // #7 — brightness scales with paint amount (subtle, capped)
+    const dens = state.litFraction || 0;
+    const brightnessBoost = 1 + dens * 0.6;     // 1.0 → 1.6
+    const alphaBoost = 1 + dens * 0.5;          // 1.0 → 1.5
+    const sliceCount = 28;
     const sliceH = reflectableH / sliceCount;
     for (let i = 0; i < sliceCount; i++) {
       const srcY = waterY - reflectableH + i * sliceH;
       const dstY = waterY + (sliceCount - 1 - i) * sliceH;
       if (dstY >= H) break;
-      // Reflection fades quickly + capped low so it doesn't drown Luna Park
-      const fade = Math.pow(1 - i / sliceCount, 1.6) * 0.55;
-      const jitter = Math.sin(state.time * 1.8 + i * 0.5) * 3;
-      ctx.globalAlpha = fade;
+      const fade = Math.pow(1 - i / sliceCount, 1.6) * 0.55 * alphaBoost;
+      // #9 — Per-row ripple displacement: deeper rows wave more, mixed sin/cos for organic motion
+      const depth = i / sliceCount;
+      const jitter = (Math.sin(state.time * 1.8 + i * 0.6) * 3 + Math.cos(state.time * 1.1 + i * 0.3) * 2) * (1 + depth * 1.2);
+      ctx.globalAlpha = Math.min(1, fade);
       ctx.drawImage(tempCanvas, 0, srcY, W, sliceH, jitter, dstY, W, Math.min(sliceH, H - dstY));
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
+
+    // #8 — Color tint wash: dominant painted color subtly tints harbour surface
+    if (dens > 0.05) {
+      const dom = state.selectedColor;
+      if (dom && dom !== 'eraser' && dom.startsWith('#')) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const grad = ctx.createLinearGradient(0, waterY, 0, H);
+        grad.addColorStop(0, dom + Math.round(Math.min(60, dens * 90)).toString(16).padStart(2, '0'));
+        grad.addColorStop(1, dom + '00');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, waterY, W, waterH);
+        ctx.restore();
+      }
+    }
   }
 
   // #1 — drawFlickers: short white shimmer at fresh paint locations
@@ -2084,15 +2126,18 @@
     const dt = Math.min(0.05, (ts - state.last) / 1000 || 0);
     state.last = ts;
     state.time += dt;
+    // #15 — rolling FPS estimate, drop heavy atmospherics on low-end
+    state.dtAvg = state.dtAvg ? state.dtAvg * 0.92 + dt * 0.08 : dt;
+    state.lowFps = state.dtAvg > 0.033;  // < 30fps
     updateParticles(dt);
     updateFireworks(dt);
     maybeSpawnHelicopter();
     updateHelicopters(dt);
     updateCascades();
     maybeLightning();
-    maybeShootingStar();        // #15
-    updateShootingStars(dt);    // #15
-    updateTimeAttack(dt);       // #9
+    maybeShootingStar();
+    updateShootingStars(dt);
+    updateTimeAttack(dt);
     render();
     requestAnimationFrame(loop);
   }
