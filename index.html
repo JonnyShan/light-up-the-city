@@ -681,7 +681,7 @@
     </div>
 
     <div class="overlay" id="title-screen">
-      <video id="intro-video" autoplay muted loop playsinline preload="auto"
+      <video id="intro-video" autoplay muted loop playsinline preload="metadata"
              poster="intro_scan_lights_poster.jpg">
         <source src="intro_scan_lights_loop.webm" type="video/webm">
         <source src="intro_scan_lights_loop.mp4" type="video/mp4">
@@ -829,10 +829,12 @@
     tempCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
     tempCtx.imageSmoothingEnabled = false;
 
-    bloomCanvas.width = Math.floor(W * 0.6);
-    bloomCanvas.height = Math.floor(H * 0.6);
-    bloomCanvas2.width = Math.floor(W * 0.6);
-    bloomCanvas2.height = Math.floor(H * 0.6);
+    // #19 — bloom at 0.6 of full backing-store res (DPR-aware) for retina sharpness
+    const bloomScale = 0.6;
+    bloomCanvas.width = Math.floor(W * DPR * bloomScale);
+    bloomCanvas.height = Math.floor(H * DPR * bloomScale);
+    bloomCanvas2.width = Math.floor(W * DPR * bloomScale);
+    bloomCanvas2.height = Math.floor(H * DPR * bloomScale);
     flickerCanvas.width = W;
     flickerCanvas.height = H;
 
@@ -1452,7 +1454,8 @@
     const p = getPos(e);
     state.pointers.set(e.pointerId, { x: p.x, y: p.y });
     paintAt(p.x, p.y);
-    // Cascade disabled — no explosion effect on virgin tap
+    // #1 — Haptic feedback on touch start (Android; iOS Safari silently ignores)
+    if (navigator.vibrate) navigator.vibrate(6);
   });
   canvas.addEventListener('pointermove', e => {
     if (!state.pointers.has(e.pointerId)) return;
