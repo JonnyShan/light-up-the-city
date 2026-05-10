@@ -918,6 +918,11 @@
     if (flickers.length < 200 && Math.random() < 0.55) {
       flickers.push({ x, y, t: state.time, dur: 0.22 + Math.random() * 0.15, color: hex });
     }
+    // Throttled live sample so lit-counter updates immediately
+    state.paintTicks = (state.paintTicks || 0) + 1;
+    if (state.paintTicks % 20 === 0) {
+      sampleLitFraction();
+    }
   }
   function paintLine(x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
