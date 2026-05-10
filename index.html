@@ -888,13 +888,30 @@
       for (let y = D; y < oceanStartY - D; y++) {
         for (let x = D; x < w - D; x++) {
           const idx = y * w + x;
+          const p4 = idx * 4;
           const lum = lumOn[idx];
           const diff = lum - lumOff[idx];
-          if (diff < 40) continue;
-          if (lum > 200 && y > h * 0.45) { hits[idx] = 1; continue; }
-          if (lum < 70) continue;
-          const mortar = (lumOn[idx - D] + lumOn[idx + D] + lumOn[idx - D * w] + lumOn[idx + D * w]) * 0.25;
-          if (lum - mortar > 30) hits[idx] = 1;
+          // Saturation check — picks up colored objects that aren't necessarily brighter
+          // (e.g. bridge piers tinted purple, Opera sails tinted cyan, boat hulls tinted)
+          const r = onData[p4], g = onData[p4+1], b = onData[p4+2];
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const satOn = max === 0 ? 0 : (max - min) / max;
+          const or = offData[p4], og = offData[p4+1], ob = offData[p4+2];
+          const offMax = Math.max(or, og, ob);
+          const offMin = Math.min(or, og, ob);
+          const satOff = offMax === 0 ? 0 : (offMax - offMin) / offMax;
+          // Path A: bright peak (catches Tower top, bridge LEDs, boat cabin lights)
+          if (lum > 180) { hits[idx] = 1; continue; }
+          // Path B: significant luminance jump on→off (lit windows + structural objects)
+          if (diff > 35 && lum > 55) { hits[idx] = 1; continue; }
+          // Path C: chromatic shift (colored on-image vs grayscale off — bridge, opera, piers)
+          if (satOn - satOff > 0.18 && lum > 50) { hits[idx] = 1; continue; }
+          // Path D: local-contrast window detection (catches dot grid)
+          if (lum > 70) {
+            const mortar = (lumOn[idx - D] + lumOn[idx + D] + lumOn[idx - D * w] + lumOn[idx + D * w]) * 0.25;
+            if (lum - mortar > 25) hits[idx] = 1;
+          }
         }
       }
       // Dilate 1px in all 8 directions so each window becomes 3x3 — visible on downscale
@@ -915,7 +932,7 @@
     };
   `;
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v5-deep`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v6-everything`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
