@@ -1607,16 +1607,8 @@
     }
     tempCtx.globalCompositeOperation = 'source-over';
 
-    // #2 — wall bleed: tight 3px halo of painted color leaks onto adjacent dark wall
-    ctx.save();
-    ctx.filter = 'blur(3px) saturate(1.4) brightness(1.1)';
-    ctx.globalAlpha = 0.3;
-    ctx.drawImage(tempCanvas, 0, 0, W, H);
-    ctx.filter = 'none';
-    ctx.globalAlpha = 1;
-    ctx.restore();
-
-    // #4 + #8 — crisp window edges with additive overlap blend, super-bright
+    // Wall-bleed REMOVED — color stays sharp on object pixels only
+    // Crisp paint pass — no blur, additive overlap blend, super-bright
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.globalCompositeOperation = 'lighter';
@@ -2084,30 +2076,13 @@
     bloomCtx.filter = 'brightness(1.7) saturate(1.6)';
     bloomCtx.drawImage(tempCanvas, 0, 0, bw, bh);
     bloomCtx.filter = 'none';
-    // Tight halo — keep tight, hugs windows
+    // Tight halo only — keeps glow ON the object pixels, no sky bleed
     bloomCtx2.clearRect(0, 0, bw, bh);
-    bloomCtx2.filter = 'blur(3px)';
+    bloomCtx2.filter = 'blur(2px)';
     bloomCtx2.drawImage(bloomCanvas, 0, 0);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 1.0;
-    ctx.drawImage(bloomCanvas2, 0, 0, W, H);
-    // Medium halo — visible glow
-    bloomCtx2.clearRect(0, 0, bw, bh);
-    bloomCtx2.filter = 'blur(8px)';
-    bloomCtx2.drawImage(bloomCanvas, 0, 0);
-    bloomCtx2.filter = 'none';
-    ctx.globalAlpha = 0.65;
-    ctx.drawImage(bloomCanvas2, 0, 0, W, H);
-    // Wide halo (atmospheric) — #6: scales with density
-    const dens = state.litFraction || 0;
-    const wideBlur = 18 + dens * 18;
-    const wideAlpha = 0.32 + dens * 0.30;
-    bloomCtx2.clearRect(0, 0, bw, bh);
-    bloomCtx2.filter = `blur(${wideBlur}px)`;
-    bloomCtx2.drawImage(bloomCanvas, 0, 0);
-    bloomCtx2.filter = 'none';
-    ctx.globalAlpha = wideAlpha;
+    ctx.globalAlpha = 0.7;
     ctx.drawImage(bloomCanvas2, 0, 0, W, H);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
