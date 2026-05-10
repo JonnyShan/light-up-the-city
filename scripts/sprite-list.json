@@ -1,0 +1,31 @@
+{
+  "anchor": "sprites/opera_house_off.png",
+  "style_strength": 60,
+  "size": 128,
+  "buildings": [
+    {"name": "opera_house",            "desc": "Sydney Opera House, white sail roof shells, harbour podium",                 "seed": 1001, "w": 200, "h": 128},
+    {"name": "harbour_bridge",         "desc": "Sydney Harbour Bridge, steel arch coathanger, two stone pylons",            "seed": 1002, "w": 320, "h": 128},
+    {"name": "sydney_tower",           "desc": "Sydney Tower Eye, tall thin needle, golden observation pod, antenna spire", "seed": 1003},
+    {"name": "crown_sydney",           "desc": "Crown Sydney Barangaroo, twisting crystal glass tower, modern luxury",      "seed": 1004},
+    {"name": "chifley_tower",          "desc": "Chifley Tower, postmodern stepped skyscraper, copper crown spire",          "seed": 1005},
+    {"name": "governor_phillip_tower", "desc": "Governor Phillip Tower, twin glass towers with stone podium",               "seed": 1006},
+    {"name": "barangaroo_tower",       "desc": "Barangaroo International Tower, modern glass office skyscraper",            "seed": 1007},
+    {"name": "australia_square",       "desc": "Australia Square, cylindrical round office tower, retro 1960s",             "seed": 1008},
+    {"name": "aurora_place",           "desc": "Aurora Place, curved white sail-shaped office tower",                       "seed": 1009},
+    {"name": "amp_centre",             "desc": "AMP Centre, dark glass rectangular skyscraper, classic 1970s office",       "seed": 1010},
+    {"name": "world_square",           "desc": "World Square Tower, modern mixed-use skyscraper, glass facade",             "seed": 1011},
+    {"name": "qvb",                    "desc": "Queen Victoria Building, sandstone Victorian shopping arcade, copper dome", "seed": 1012},
+    {"name": "town_hall",              "desc": "Sydney Town Hall, sandstone Victorian clock tower, ornate facade",          "seed": 1013},
+    {"name": "customs_house",          "desc": "Sydney Customs House, sandstone heritage waterfront building",              "seed": 1014},
+    {"name": "art_deco_filler",        "desc": "art deco Sydney apartment block, brown brick, stepped crown, 1930s",        "seed": 1015},
+    {"name": "manly_ferry",            "desc": "Sydney Manly ferry boat, white hull, green trim, two decks, smokestack",    "seed": 1016, "w": 128, "h": 96},
+    {"name": "sailboat",               "desc": "Sydney harbour sailboat, white triangular sail, slim hull",                 "seed": 1017, "w": 96, "h": 128},
+    {"name": "lighthouse",             "desc": "Hornby lighthouse, red and white striped tower, dome lantern",              "seed": 1018, "w": 96, "h": 160},
+    {"name": "palm_cluster",           "desc": "cluster of three Sydney palm trees, fronds, tropical",                       "seed": 1019, "w": 128, "h": 128},
+    {"name": "harbour_crane",          "desc": "Barangaroo harbour container crane, yellow steel tower, jib arm",            "seed": 1020, "w": 128, "h": 160},
+    {"name": "gum_tree",               "desc": "tall Australian gum tree, eucalyptus, sparse silver-green canopy",           "seed": 1021, "w": 96, "h": 128},
+    {"name": "darling_harbour_dome",   "desc": "Darling Harbour entertainment dome, glass curve, modern leisure venue",      "seed": 1022, "w": 160, "h": 96},
+    {"name": "distant_skyscraper",     "desc": "generic distant CBD skyscraper, simple glass tower silhouette",              "seed": 1023},
+    {"name": "warehouse",              "desc": "Walsh Bay heritage warehouse, dark timber, low brick, harbour pier",         "seed": 1024, "w": 160, "h": 96}
+  ]
+}

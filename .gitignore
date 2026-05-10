@@ -1,0 +1,26 @@
+# Secrets
+scripts/.env.local
+**/.env
+**/.env.*
+
+# DB / cache
+ruvector.db
+*.db
+
+# Image backups + dev versions
+*.bak.png
+*.prev.png
+*.v[0-9].png
+*.v[0-9][0-9].png
+
+# Sprite dev outputs (large, regen-able)
+sprites/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
