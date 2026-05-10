@@ -698,6 +698,7 @@
     self.onmessage = (e) => {
       const { w, h, onData, offData } = e.data;
       const out = new Uint8ClampedArray(w * h * 4);
+      const hits = new Uint8Array(w * h);
       const oceanStartY = Math.floor(h * 0.78);
       const lumOn = new Float32Array(w * h);
       const lumOff = new Float32Array(w * h);
@@ -712,15 +713,22 @@
           const lum = lumOn[idx];
           const diff = lum - lumOff[idx];
           if (diff < 40) continue;
-          if (lum > 200 && y > h * 0.45) {
-            const p = idx * 4;
-            out[p] = 255; out[p+1] = 255; out[p+2] = 255; out[p+3] = 255;
-            continue;
-          }
+          if (lum > 200 && y > h * 0.45) { hits[idx] = 1; continue; }
           if (lum < 70) continue;
           const mortar = (lumOn[idx - D] + lumOn[idx + D] + lumOn[idx - D * w] + lumOn[idx + D * w]) * 0.25;
-          if (lum - mortar > 30) {
-            const p = idx * 4;
+          if (lum - mortar > 30) hits[idx] = 1;
+        }
+      }
+      // Dilate 1px in all 8 directions so each window becomes 3x3 — visible on downscale
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = y * w + x;
+          if (hits[i] ||
+              hits[i - 1] || hits[i + 1] ||
+              hits[i - w] || hits[i + w] ||
+              hits[i - w - 1] || hits[i - w + 1] ||
+              hits[i + w - 1] || hits[i + w + 1]) {
+            const p = i * 4;
             out[p] = 255; out[p+1] = 255; out[p+2] = 255; out[p+3] = 255;
           }
         }
@@ -729,7 +737,7 @@
     };
   `;
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v2`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v3`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -1441,23 +1449,23 @@
     bloomCtx.filter = 'none';
     // Tight halo — keep tight, hugs windows
     bloomCtx2.clearRect(0, 0, bw, bh);
-    bloomCtx2.filter = 'blur(2px)';
+    bloomCtx2.filter = 'blur(3px)';
     bloomCtx2.drawImage(bloomCanvas, 0, 0);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 1.0;
     ctx.drawImage(bloomCanvas2, 0, 0, W, H);
-    // Medium halo — softer
+    // Medium halo — visible glow
     bloomCtx2.clearRect(0, 0, bw, bh);
-    bloomCtx2.filter = 'blur(5px)';
+    bloomCtx2.filter = 'blur(8px)';
     bloomCtx2.drawImage(bloomCanvas, 0, 0);
     bloomCtx2.filter = 'none';
-    ctx.globalAlpha = 0.4;
+    ctx.globalAlpha = 0.65;
     ctx.drawImage(bloomCanvas2, 0, 0, W, H);
-    // Wide halo (atmospheric) — #6: scales with density but capped tight
+    // Wide halo (atmospheric) — #6: scales with density
     const dens = state.litFraction || 0;
-    const wideBlur = 12 + dens * 16;
-    const wideAlpha = 0.18 + dens * 0.25;
+    const wideBlur = 18 + dens * 18;
+    const wideAlpha = 0.32 + dens * 0.30;
     bloomCtx2.clearRect(0, 0, bw, bh);
     bloomCtx2.filter = `blur(${wideBlur}px)`;
     bloomCtx2.drawImage(bloomCanvas, 0, 0);
