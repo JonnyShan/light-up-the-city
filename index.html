@@ -57,11 +57,6 @@
     box-shadow: 0 0 40px rgba(255, 43, 214, 0.4), 0 0 80px rgba(177, 76, 255, 0.2);
   }
 
-  canvas, #game {
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-    -ms-interpolation-mode: nearest-neighbor;
-  }
   canvas {
     display: block;
     width: 100%;
@@ -72,11 +67,11 @@
   }
 
   .hud {
-    display: none;  /* hidden — clean canvas, no top HUD */
     position: absolute;
     top: 0; left: 0; right: 0;
     z-index: 10;
     padding: 14px 14px 10px;
+    display: flex;
     justify-content: space-between;
     align-items: flex-start;
     pointer-events: none;
@@ -553,8 +548,8 @@
       <div class="colors" id="colors"></div>
       <div class="brush-row">
         <span class="brush-label">BRUSH</span>
-        <input type="range" id="brush-slider" min="1" max="10" value="4" />
-        <span class="brush-val" id="brush-val">4</span>
+        <input type="range" id="brush-slider" min="1" max="30" value="12" />
+        <span class="brush-val" id="brush-val">12</span>
       </div>
     </div>
 
@@ -657,7 +652,7 @@
     litFraction: 0,
     litLastSampled: 0,
     achievementShown: false,
-    brushRadius: 4,        // adjustable 1-10 via slider
+    brushRadius: 12,       // #5 — adjustable via slider
     fireworks: [],         // #3 — milestone bursts
     milestonesHit: new Set(), // tracks which thresholds fired
     lastHeli: 0,           // #13 — helicopter timer
@@ -704,18 +699,16 @@
     canvas.width = W * DPR;
     canvas.height = H * DPR;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = false; // crisp pixel art
 
     litCanvas.width = W * DPR;
     litCanvas.height = H * DPR;
     litCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    litCtx.imageSmoothingEnabled = false;
 
     tempCanvas.width = W * DPR;
     tempCanvas.height = H * DPR;
     tempCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
     tempCtx.imageSmoothingEnabled = false;
-    maskCtx.imageSmoothingEnabled = false;
 
     bloomCanvas.width = Math.floor(W * 0.6);
     bloomCanvas.height = Math.floor(H * 0.6);
@@ -728,12 +721,10 @@
   }
   function computeFit(img, w, h) {
     const r = img.naturalWidth / img.naturalHeight;
-    // Crop top 20% of sky — zoom image to 1.25x canvas height, align to bottom.
-    // This pushes skyline closer to top of canvas, less wasted sky.
-    const fh = h * 1.25;
-    const fw = fh * r;
-    const fx = (w - fw) / 2;
-    const fy = h - fh;  // bottom aligned, top overflows above canvas
+    const cr = w / h;
+    let fw, fh, fx, fy;
+    if (r > cr) { fh = h; fw = h * r; fx = (w - fw) / 2; fy = 0; }
+    else { fw = w; fh = w / r; fx = 0; fy = (h - fh) / 2; }
     return { x: fx, y: fy, w: fw, h: fh };
   }
 
@@ -758,25 +749,41 @@
   const MASK_WORKER_SRC = `
     self.onmessage = (e) => {
       const { w, h, onBuf, offBuf } = e.data;
+      // Wrap transferred ArrayBuffers back as typed arrays — indexing buf[i] returns undefined!
       const onData = new Uint8ClampedArray(onBuf);
       const offData = new Uint8ClampedArray(offBuf);
       const out = new Uint8ClampedArray(w * h * 4);
-      // Mask = ALL physical objects (buildings, bridge, opera, Luna Park, ferries).
-      // Detect: in city band y ∈ [0.30..0.78], pixel is part of an object if
-      // EITHER off-image is bright enough (silhouette structure) OR on-image
-      // differs noticeably from off-image (something lit up). Sky pixels in both
-      // images are deep navy with stars — diff is tiny, off luminance is uniform.
-      const cityTopY = Math.floor(h * 0.30);
-      const cityBotY = Math.floor(h * 0.78);
-      for (let y = cityTopY; y < cityBotY; y++) {
-        for (let x = 0; x < w; x++) {
-          const p = (y * w + x) * 4;
-          const onLum = onData[p] * 0.299 + onData[p+1] * 0.587 + onData[p+2] * 0.114;
-          const offLum = offData[p] * 0.299 + offData[p+1] * 0.587 + offData[p+2] * 0.114;
-          const diff = Math.abs(onLum - offLum);
-          // Physical object = lit in on-image OR has structural luminance in off-image
-          // (excludes pure-dark sky between buildings which is uniform in both)
-          if (diff > 18 || offLum > 40 || onLum > 70) {
+      const hits = new Uint8Array(w * h);
+      const oceanStartY = Math.floor(h * 0.78);
+      const lumOn = new Float32Array(w * h);
+      const lumOff = new Float32Array(w * h);
+      for (let i = 0, p = 0; i < w * h; i++, p += 4) {
+        lumOn[i] = onData[p] * 0.299 + onData[p+1] * 0.587 + onData[p+2] * 0.114;
+        lumOff[i] = offData[p] * 0.299 + offData[p+1] * 0.587 + offData[p+2] * 0.114;
+      }
+      const D = 4;
+      for (let y = D; y < oceanStartY - D; y++) {
+        for (let x = D; x < w - D; x++) {
+          const idx = y * w + x;
+          const lum = lumOn[idx];
+          const diff = lum - lumOff[idx];
+          if (diff < 40) continue;
+          if (lum > 200 && y > h * 0.45) { hits[idx] = 1; continue; }
+          if (lum < 70) continue;
+          const mortar = (lumOn[idx - D] + lumOn[idx + D] + lumOn[idx - D * w] + lumOn[idx + D * w]) * 0.25;
+          if (lum - mortar > 30) hits[idx] = 1;
+        }
+      }
+      // Dilate 1px in all 8 directions so each window becomes 3x3 — visible on downscale
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = y * w + x;
+          if (hits[i] ||
+              hits[i - 1] || hits[i + 1] ||
+              hits[i - w] || hits[i + w] ||
+              hits[i - w - 1] || hits[i - w + 1] ||
+              hits[i + w - 1] || hits[i + w + 1]) {
+            const p = i * 4;
             out[p] = 255; out[p+1] = 255; out[p+2] = 255; out[p+3] = 255;
           }
         }
@@ -785,7 +792,7 @@
     };
   `;
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v5-objects`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v4`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -953,7 +960,19 @@
     }
     return false;
   }
-  // Landmark tooltips disabled — clean experience, no popups
+  canvas.addEventListener('pointerdown', e => {
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => {
+      if (showLandmarkTooltip(x, y)) {
+        // Cancel the paint by removing pointer
+        state.pointers.delete(e.pointerId);
+      }
+    }, 450);
+  });
+  canvas.addEventListener('pointerup', () => clearTimeout(holdTimer));
+  canvas.addEventListener('pointercancel', () => clearTimeout(holdTimer));
 
   // #1 — Cascade triggered on tap in virgin tower (first paint of stroke)
   let lastCascadeX = -999, lastCascadeY = -999;
@@ -1302,14 +1321,15 @@
     ctx.globalAlpha = 1;
     ctx.restore();
 
-    // Laser-show paint pass — crisp edges + additive overlap blend + super-bright
+    // #4 + #8 — crisp window edges with additive overlap blend, super-bright
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.globalCompositeOperation = 'lighter';
-    ctx.filter = 'saturate(2.2) brightness(1.9) contrast(1.2)';
+    ctx.filter = 'saturate(2.0) brightness(1.7) contrast(1.15)';
     ctx.drawImage(tempCanvas, 0, 0, W, H);
     ctx.filter = 'none';
     ctx.globalCompositeOperation = 'source-over';
+    ctx.imageSmoothingEnabled = true;
     ctx.restore();
 
     // #1 — flicker bursts on freshly-painted windows
