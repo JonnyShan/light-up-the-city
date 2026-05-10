@@ -1516,6 +1516,10 @@
 
     // #8 — Cloud drift overlay
     drawCloudDrift();
+    // Stars with varied brightness
+    drawStars();
+    // Sydney Tower beacon blink
+    drawTowerBeacon();
     // #13 — Helicopter
     drawHelicopters();
 
@@ -1562,6 +1566,8 @@
     drawWaterReflection();
     // #3 — vertical LED columns streaking into water
     drawLightColumns();
+    // Caustic ripples in water
+    drawCausticRipples();
     // #14 — Ferry shimmer
     drawFerryShimmer();
 
@@ -1875,15 +1881,18 @@
   }
 
   // Procedural star twinkle — seeded once, refreshed alpha per frame
+  // #8 — Stars with varied brightness, sizes 1-3px, mix bright + dim
   const STARS = (() => {
     const arr = [];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 90; i++) {
+      const r = Math.random();
       arr.push({
         x: Math.random(),
-        y: Math.random() * 0.32,           // upper 32% only
-        size: Math.random() < 0.85 ? 1 : 2,
+        y: Math.random() * 0.30,
+        size: r < 0.65 ? 1 : (r < 0.92 ? 2 : 3),
+        baseAlpha: r < 0.55 ? 0.25 + Math.random() * 0.3 : 0.6 + Math.random() * 0.4,
         phase: Math.random() * Math.PI * 2,
-        speed: 0.6 + Math.random() * 1.6,
+        speed: 0.4 + Math.random() * 1.4,
       });
     }
     return arr;
@@ -1891,13 +1900,73 @@
   function drawStars() {
     ctx.save();
     for (const s of STARS) {
-      const a = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(state.time * s.speed + s.phase));
-      ctx.globalAlpha = a;
+      const twinkle = 0.7 + 0.3 * Math.sin(state.time * s.speed + s.phase);
+      ctx.globalAlpha = s.baseAlpha * twinkle;
       ctx.fillStyle = '#fff';
       const x = s.x * W, y = s.y * H;
       ctx.fillRect(x, y, s.size, s.size);
+      // Bright stars get a 1px halo
+      if (s.size >= 2 && s.baseAlpha > 0.7) {
+        ctx.globalAlpha = s.baseAlpha * twinkle * 0.3;
+        ctx.fillRect(x - 1, y, 1, s.size);
+        ctx.fillRect(x + s.size, y, 1, s.size);
+        ctx.fillRect(x, y - 1, s.size, 1);
+        ctx.fillRect(x, y + s.size, s.size, 1);
+      }
     }
     ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // #1 — Sydney Tower beacon: red dot at antenna tip blinks every 1.5s
+  function drawTowerBeacon() {
+    if (!imgFit.w) return;
+    // Tower antenna tip at image coords (0.46, 0.185)
+    const tx = imgFit.x + imgFit.w * 0.46;
+    const ty = imgFit.y + imgFit.h * 0.185;
+    // Blink pattern: ON 0.25s, OFF 1.25s
+    const t = state.time % 1.5;
+    if (t > 0.25) return;
+    const intensity = Math.sin((t / 0.25) * Math.PI);  // smooth in-out
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // Hot core
+    ctx.fillStyle = `rgba(255,40,40,${intensity})`;
+    ctx.beginPath();
+    ctx.arc(tx, ty, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Soft halo
+    const grad = ctx.createRadialGradient(tx, ty, 0, tx, ty, 8);
+    grad.addColorStop(0, `rgba(255,60,60,${intensity * 0.7})`);
+    grad.addColorStop(1, 'rgba(255,60,60,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(tx, ty, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // #6 — Caustic ripples in harbour water: bright sin-wave bands
+  function drawCausticRipples() {
+    const waterY = H * WATER_LINE;
+    if (waterY >= H - 4) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // 3 horizontal caustic bands drifting at different speeds
+    const bands = [
+      { y: waterY + (H - waterY) * 0.18, speed: 0.7, phase: 0, alpha: 0.08 },
+      { y: waterY + (H - waterY) * 0.45, speed: 0.5, phase: 1.2, alpha: 0.06 },
+      { y: waterY + (H - waterY) * 0.72, speed: 0.6, phase: 2.4, alpha: 0.05 },
+    ];
+    for (const b of bands) {
+      for (let x = 0; x < W; x += 4) {
+        const wave = Math.sin(x * 0.06 + state.time * b.speed + b.phase);
+        if (wave < 0.55) continue;
+        const a = (wave - 0.55) / 0.45 * b.alpha;
+        ctx.fillStyle = `rgba(180,220,255,${a})`;
+        ctx.fillRect(x, b.y - 1, 4, 2);
+      }
+    }
     ctx.restore();
   }
 
