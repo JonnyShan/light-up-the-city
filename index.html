@@ -337,6 +337,43 @@
   }
   #tooltip.show { opacity: 1; }
 
+  #brush-cursor {
+    position: absolute;
+    z-index: 25;
+    pointer-events: none;
+    border: 1px solid rgba(255,255,255,0.55);
+    border-radius: 50%;
+    box-shadow: 0 0 8px currentColor;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.2s;
+    will-change: transform, opacity;
+  }
+  #brush-cursor.show { opacity: 1; }
+  .color-swatch.eraser {
+    background: repeating-linear-gradient(45deg, #444 0 4px, #000 4px 8px) !important;
+    border-color: #fff;
+  }
+  .color-swatch.tap-pulse {
+    animation: tap-flash 0.4s ease-out;
+  }
+  @keyframes tap-flash {
+    0% { box-shadow: 0 0 0 0 #fff; transform: scale(1.18); }
+    50% { box-shadow: 0 0 0 8px transparent; transform: scale(1.4); }
+    100% { box-shadow: 0 0 0 0 transparent; transform: scale(1.18); }
+  }
+  @keyframes lightning-flash {
+    0%, 100% { opacity: 0; }
+    5%, 15% { opacity: 0.6; }
+    10% { opacity: 0; }
+  }
+  .lightning-flash {
+    position: absolute; inset: 0; z-index: 19;
+    background: rgba(220,220,255,1);
+    pointer-events: none;
+    animation: lightning-flash 0.4s linear;
+  }
+
   .modes {
     display: flex;
     justify-content: center;
@@ -522,6 +559,9 @@
     <!-- Building tooltips (positioned overlay) -->
     <div id="tooltip"></div>
 
+    <!-- Brush size cursor preview ring -->
+    <div id="brush-cursor"></div>
+
     <div class="overlay" id="title-screen">
       <div class="intro-eyebrow">A Vivid Sandbox</div>
       <div class="intro-title">Light Up<br/><span class="accent">The City</span></div>
@@ -563,6 +603,7 @@
     { hex: '#ffd23f' }, { hex: '#39ff88' }, { hex: '#ff8c2b' },
     { hex: 'rainbow' },  // special: reveals on-image's natural multi-colors
     { hex: 'custom' },   // opens native hex picker
+    { hex: 'eraser' },   // #4 — destination-out brush
   ];
 
   let W = 0, H = 0, DPR = 1;
@@ -582,6 +623,17 @@
   const flickerCanvas = document.createElement('canvas');
   const flickerCtx = flickerCanvas.getContext('2d');
   const flickers = []; // {x, y, t, dur, color}
+
+  // #7 — Landmark tooltip zones (normalized 0-1 coords keyed to current skyline)
+  const LANDMARKS = [
+    { x: 0.46, y: 0.20, r: 0.06, name: 'SYDNEY TOWER' },
+    { x: 0.12, y: 0.75, r: 0.10, name: 'OPERA HOUSE' },
+    { x: 0.65, y: 0.74, r: 0.18, name: 'HARBOUR BRIDGE' },
+    { x: 0.92, y: 0.92, r: 0.08, name: 'LUNA PARK' },
+    { x: 0.86, y: 0.38, r: 0.06, name: 'AWA TOWER' },
+  ];
+  // #1 — Building wake-up cascade tasks
+  const cascadeTasks = []; // {x, y, t0, dur, color, maxR}
 
   const offImg = new Image();
   const onImg = new Image();
@@ -793,34 +845,36 @@
     colorsEl.innerHTML = '';
     COLORS.forEach((c, i) => {
       const el = document.createElement('div');
-      el.className = 'color-swatch' + (i === 0 ? ' active' : '') + (c.hex === 'rainbow' ? ' rainbow' : '');
+      let cls = 'color-swatch' + (i === 0 ? ' active' : '');
+      if (c.hex === 'rainbow') cls += ' rainbow';
+      if (c.hex === 'eraser') cls += ' eraser';
+      el.className = cls;
       if (c.hex === 'rainbow') {
         el.style.background = 'conic-gradient(#ff2bd6, #ffd23f, #39ff88, #00f0ff, #b14cff, #ff2bd6)';
       } else if (c.hex === 'custom') {
-        // #10 — opens native hex picker
         el.style.background = 'conic-gradient(red, orange, yellow, green, cyan, blue, magenta, red)';
         el.title = 'Custom color';
+      } else if (c.hex === 'eraser') {
+        el.title = 'Eraser';
       } else {
         el.style.background = c.hex;
         el.style.color = c.hex;
       }
       el.dataset.hex = c.hex;
       el.dataset.idx = i;
-      el.addEventListener('click', () => {
+      const handler = () => {
         if (c.hex === 'custom') {
           document.getElementById('hex-picker').click();
         } else {
           selectColor(c.hex, el);
         }
-      });
-      el.addEventListener('touchstart', e => {
-        e.preventDefault();
-        if (c.hex === 'custom') {
-          document.getElementById('hex-picker').click();
-        } else {
-          selectColor(c.hex, el);
-        }
-      }, { passive: false });
+        // #5 — tap pulse animation
+        el.classList.remove('tap-pulse');
+        void el.offsetWidth;
+        el.classList.add('tap-pulse');
+      };
+      el.addEventListener('click', handler);
+      el.addEventListener('touchstart', e => { e.preventDefault(); handler(); }, { passive: false });
       colorsEl.appendChild(el);
     });
   }
@@ -830,6 +884,11 @@
     state.selectedHueOffset = c ? c.hue - 320 : 0;
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('active', s === el));
     playBlip(colorToFreq(hex) * 1.2, 0.06, 'sine', 0.06);
+    // Update brush cursor color
+    const cursor = document.getElementById('brush-cursor');
+    if (cursor) {
+      cursor.style.color = (hex === 'rainbow' || hex === 'eraser' || hex === 'custom') ? '#fff' : hex;
+    }
   }
   // #10 — Custom hex picker integration
   const hexPicker = document.getElementById('hex-picker');
@@ -847,10 +906,170 @@
   // #5 — Brush size slider
   const brushSlider = document.getElementById('brush-slider');
   const brushVal = document.getElementById('brush-val');
+  const brushCursor = document.getElementById('brush-cursor');
+  function applyBrushSize(r) {
+    state.brushRadius = r;
+    brushVal.textContent = r;
+    // #3 — sync cursor preview size
+    if (brushCursor) {
+      brushCursor.style.width = (r * 2) + 'px';
+      brushCursor.style.height = (r * 2) + 'px';
+    }
+  }
+  applyBrushSize(parseInt(brushSlider.value));
   brushSlider.addEventListener('input', e => {
-    state.brushRadius = parseInt(e.target.value);
-    brushVal.textContent = state.brushRadius;
+    applyBrushSize(parseInt(e.target.value));
+    // Flash cursor on slider drag near slider position
+    if (brushCursor) {
+      const rect = brushSlider.getBoundingClientRect();
+      brushCursor.style.left = (rect.left + rect.width / 2) + 'px';
+      brushCursor.style.top = (rect.top - 20) + 'px';
+      brushCursor.classList.add('show');
+      clearTimeout(state.cursorTimer);
+      state.cursorTimer = setTimeout(() => brushCursor.classList.remove('show'), 600);
+    }
   });
+  // #3 — Track pointer for brush cursor on canvas
+  canvas.addEventListener('pointermove', e => {
+    if (brushCursor) {
+      brushCursor.style.left = e.clientX + 'px';
+      brushCursor.style.top = e.clientY + 'px';
+      brushCursor.classList.add('show');
+      clearTimeout(state.cursorTimer);
+      state.cursorTimer = setTimeout(() => brushCursor.classList.remove('show'), 500);
+    }
+  });
+
+  // #7 — Landmark tooltips via long-press (450ms)
+  const tooltipEl = document.getElementById('tooltip');
+  let holdTimer = null;
+  function showLandmarkTooltip(x, y) {
+    const fx = x / W, fy = y / H;
+    for (const lm of LANDMARKS) {
+      const dx = fx - lm.x, dy = fy - lm.y;
+      if (dx * dx + dy * dy < lm.r * lm.r) {
+        tooltipEl.textContent = lm.name;
+        const r = canvas.getBoundingClientRect();
+        tooltipEl.style.left = (r.left + x) + 'px';
+        tooltipEl.style.top = (r.top + y - 30) + 'px';
+        tooltipEl.style.transform = 'translate(-50%, 0)';
+        tooltipEl.classList.add('show');
+        setTimeout(() => tooltipEl.classList.remove('show'), 1800);
+        return true;
+      }
+    }
+    return false;
+  }
+  canvas.addEventListener('pointerdown', e => {
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => {
+      if (showLandmarkTooltip(x, y)) {
+        // Cancel the paint by removing pointer
+        state.pointers.delete(e.pointerId);
+      }
+    }, 450);
+  });
+  canvas.addEventListener('pointerup', () => clearTimeout(holdTimer));
+  canvas.addEventListener('pointercancel', () => clearTimeout(holdTimer));
+
+  // #1 — Cascade triggered on tap in virgin tower (first paint of stroke)
+  let lastCascadeX = -999, lastCascadeY = -999;
+  function maybeTriggerCascade(x, y) {
+    // Skip if eraser, or too close to last cascade origin
+    if (state.selectedColor === 'eraser') return;
+    const dx = x - lastCascadeX, dy = y - lastCascadeY;
+    if (dx * dx + dy * dy < 50 * 50) return;
+    // Only cascade if local litCanvas at (x,y) is mostly empty (virgin)
+    const sample = litCtx.getImageData(Math.max(0, x - 8), Math.max(0, y - 8), 16, 16).data;
+    let alpha = 0;
+    for (let i = 3; i < sample.length; i += 4) alpha += sample[i];
+    if (alpha > 800) return;  // already painted
+    lastCascadeX = x; lastCascadeY = y;
+    const hex = state.selectedColor === 'rainbow' ? '#ffffff' : state.selectedColor;
+    cascadeTasks.push({ x, y, t0: state.time, dur: 0.8, color: hex, maxR: 60 });
+  }
+  function updateCascades() {
+    for (let i = cascadeTasks.length - 1; i >= 0; i--) {
+      const c = cascadeTasks[i];
+      const age = state.time - c.t0;
+      if (age >= c.dur) { cascadeTasks.splice(i, 1); continue; }
+      const p = age / c.dur;
+      const r = p * c.maxR;
+      // Paint a ring at radius r
+      const ringPts = 16;
+      const prevColor = state.selectedColor;
+      // Direct paint to lit canvas using the cascade color
+      const useHex = c.color;
+      for (let j = 0; j < ringPts; j++) {
+        const ang = (j / ringPts) * Math.PI * 2;
+        const rx = c.x + Math.cos(ang) * r;
+        const ry = c.y + Math.sin(ang) * r;
+        if (rx < 0 || rx >= W || ry < 0 || ry >= H * WATER_LINE) continue;
+        const grad = litCtx.createRadialGradient(rx, ry, 0, rx, ry, 6);
+        grad.addColorStop(0, useHex);
+        grad.addColorStop(0.5, useHex);
+        grad.addColorStop(1, useHex + '00');
+        litCtx.fillStyle = grad;
+        litCtx.beginPath();
+        litCtx.arc(rx, ry, 6, 0, Math.PI * 2);
+        litCtx.fill();
+      }
+    }
+  }
+
+  // #10 — Lightning storm: rare distant flash every 60-120s
+  let nextLightning = 25 + Math.random() * 30;
+  function maybeLightning() {
+    if (state.time < nextLightning) return;
+    nextLightning = state.time + 60 + Math.random() * 60;
+    const flash = document.createElement('div');
+    flash.className = 'lightning-flash';
+    document.getElementById('app').appendChild(flash);
+    setTimeout(() => flash.remove(), 500);
+    playBlip(60, 0.8, 'sawtooth', 0.08);
+  }
+
+  // #9 — Aurora bands at 100% lit (reward)
+  function drawAuroraFinale() {
+    if ((state.litFraction || 0) < 0.95) return;
+    const ribbonH = H * 0.32;
+    const offset = (Math.sin(state.time * 0.2) + 1) * 0.5;
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, 'rgba(57,255,136,0)');
+    grad.addColorStop(Math.max(0, offset - 0.3), 'rgba(57,255,136,0.10)');
+    grad.addColorStop(offset, 'rgba(0,240,255,0.16)');
+    grad.addColorStop(Math.min(1, offset + 0.3), 'rgba(177,76,255,0.12)');
+    grad.addColorStop(1, 'rgba(255,43,214,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, ribbonH);
+    ctx.restore();
+  }
+
+  // #2 — Save / Share painted result
+  async function shareImage() {
+    canvas.toBlob(async blob => {
+      if (!blob) return;
+      const file = new File([blob], 'light-up-sydney.png', { type: 'image/png' });
+      // Try native share first
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Light Up The City', text: `${Math.round((state.litFraction || 0) * 100)}% lit in Vivid Sydney` });
+          return;
+        } catch (_) {}
+      }
+      // Fallback: download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'light-up-sydney.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, 'image/png');
+  }
   function selectMode(mode, el) {
     state.selectedMode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b === el));
@@ -905,6 +1124,16 @@
     if (!state.running || !maskBuilt) return;
     if (y >= H * WATER_LINE) return;  // block painting on water
     const radius = state.brushRadius;  // #5 — slider-controlled
+    // #4 — Eraser: subtract from lit layer
+    if (state.selectedColor === 'eraser') {
+      litCtx.globalCompositeOperation = 'destination-out';
+      litCtx.beginPath();
+      litCtx.arc(x, y, radius, 0, Math.PI * 2);
+      litCtx.fillStyle = '#000';
+      litCtx.fill();
+      litCtx.globalCompositeOperation = 'source-over';
+      return;
+    }
     const hex = state.selectedColor === 'rainbow' ? '#ffffff' : state.selectedColor;
     // Color halo — soft falloff
     const grad = litCtx.createRadialGradient(x, y, 0, x, y, radius);
@@ -917,7 +1146,6 @@
     litCtx.arc(x, y, radius, 0, Math.PI * 2);
     litCtx.fill();
     // Hot white core — adds a 1-2px peak-bright pixel cluster at brush center.
-    // This makes single windows pop brighter than the color halo alone.
     litCtx.globalCompositeOperation = 'lighter';
     const coreR = Math.max(1, Math.min(radius * 0.35, 4));
     const coreGrad = litCtx.createRadialGradient(x, y, 0, x, y, coreR);
@@ -975,11 +1203,9 @@
     playBlip(220, 0.4, 'sawtooth', 0.1);
   }
   function saveImage() {
-    const link = document.createElement('a');
-    link.download = 'light-up-the-city-' + Date.now() + '.png';
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+    // #2 — try native share first, fallback to download
     playBlip(880, 0.18, 'sine', 0.12);
+    shareImage();
   }
   resetBtn.addEventListener('click', e => { e.stopPropagation(); resetSkyline(); });
   saveBtn.addEventListener('click', e => { e.stopPropagation(); saveImage(); });
@@ -997,6 +1223,8 @@
     const p = getPos(e);
     state.pointers.set(e.pointerId, { x: p.x, y: p.y });
     paintAt(p.x, p.y);
+    // #1 — trigger building wake-up cascade if tapping virgin area
+    maybeTriggerCascade(p.x, p.y);
   });
   canvas.addEventListener('pointermove', e => {
     if (!state.pointers.has(e.pointerId)) return;
@@ -1120,6 +1348,8 @@
     drawParticles();
     // #3 — Fireworks (above everything except vignette)
     drawFireworks();
+    // #9 — Aurora finale at 100%
+    drawAuroraFinale();
     applyVignette();
 
     // Periodically sample lit fraction (every ~0.5s)
@@ -1155,9 +1385,17 @@
     }
   }
 
-  // #3 — Fireworks burst at milestones
+  // #3 — Fireworks burst at milestones (#6 — extra finale at 100%)
   function spawnFirework(milestone) {
-    const bursts = milestone === 100 ? 6 : milestone === 50 ? 3 : 2;
+    const bursts = milestone === 100 ? 16 : milestone === 50 ? 4 : 2;
+    if (milestone === 100) {
+      // #6 — celebration text overlay
+      const el = document.createElement('div');
+      el.textContent = 'MASTERPIECE';
+      el.style.cssText = 'position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);font-family:Courier New,monospace;font-size:32px;font-weight:bold;color:#ffd23f;text-shadow:0 0 12px #ff2bd6,0 0 24px #00f0ff;z-index:40;pointer-events:none;animation:tap-flash 2s ease-out;letter-spacing:4px;';
+      document.getElementById('app').appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
     for (let b = 0; b < bursts; b++) {
       setTimeout(() => {
         const fx = 60 + Math.random() * (W - 120);
@@ -1510,6 +1748,8 @@
     updateFireworks(dt);
     maybeSpawnHelicopter();
     updateHelicopters(dt);
+    updateCascades();   // #1
+    maybeLightning();   // #10
     render();
     requestAnimationFrame(loop);
   }
