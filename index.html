@@ -696,7 +696,10 @@
   // #12 — Cached to localStorage as PNG data URL keyed by image size signature
   const MASK_WORKER_SRC = `
     self.onmessage = (e) => {
-      const { w, h, onData, offData } = e.data;
+      const { w, h, onBuf, offBuf } = e.data;
+      // Wrap transferred ArrayBuffers back as typed arrays — indexing buf[i] returns undefined!
+      const onData = new Uint8ClampedArray(onBuf);
+      const offData = new Uint8ClampedArray(offBuf);
       const out = new Uint8ClampedArray(w * h * 4);
       const hits = new Uint8Array(w * h);
       const oceanStartY = Math.floor(h * 0.78);
@@ -737,7 +740,7 @@
     };
   `;
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v3`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v4`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -782,7 +785,7 @@
       worker.terminate();
       if (cb) cb();
     };
-    worker.postMessage({ w, h, onData: onData.buffer, offData: offData.buffer }, [onData.buffer, offData.buffer]);
+    worker.postMessage({ w, h, onBuf: onData.buffer, offBuf: offData.buffer }, [onData.buffer, offData.buffer]);
   }
 
   // ============= COLOR + MODE UI =============
