@@ -78,12 +78,15 @@ def main():
     )
 
     off_prompt = base_prompt + (
-        " LIGHTS OFF state — TOTAL BLACKOUT NIGHT. EVERY building window completely DARK. "
-        "City as pure dark silhouettes against starry navy sky. "
-        "NO window lights ANYWHERE. NO neon. NO warm glow. Bridge dark steel only. Opera House sails plain unlit white-grey. "
+        " LIGHTS OFF state — TOTAL BLACKOUT NIGHT with RICH ATMOSPHERIC SKY. EVERY building window completely DARK. "
+        "City as pure dark silhouettes. "
+        "Sky: lush deep-navy at horizon graduating to PURPLE-INDIGO at top zenith, "
+        "DENSE STAR FIELD scattered across whole sky (small bright pinprick stars, hundreds visible), "
+        "soft pixel cloud whisps with subtle pink/violet edges drifting across, faint moon haze. "
+        "NO window lights ANYWHERE in buildings. NO neon. NO warm glow. Bridge dark steel only. Opera House sails plain unlit white-grey. "
         "Luna Park ferris wheel and face entrance UNLIT silhouettes. Ferry hulls visible but cabin windows dark. "
-        "Water reflects only the moon and stars (no city lights). "
-        "Pre-event night — the city has gone dark, lights waiting to be turned on. Stars and clouds visible only."
+        "Water = dark glassy harbour reflecting moon and stars only (no city lights yet). "
+        "Pre-event night — city gone dark, lights waiting to be turned on. Atmospheric, moody, beautiful, painterly pixel-art sky."
     )
 
     on_prompt_text = (
