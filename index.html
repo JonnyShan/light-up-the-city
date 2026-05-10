@@ -67,11 +67,11 @@
   }
 
   .hud {
+    display: none !important;  /* HUD hidden */
     position: absolute;
     top: 0; left: 0; right: 0;
     z-index: 10;
     padding: 14px 14px 10px;
-    display: flex;
     justify-content: space-between;
     align-items: flex-start;
     pointer-events: none;
@@ -721,10 +721,12 @@
   }
   function computeFit(img, w, h) {
     const r = img.naturalWidth / img.naturalHeight;
-    const cr = w / h;
-    let fw, fh, fx, fy;
-    if (r > cr) { fh = h; fw = h * r; fx = (w - fw) / 2; fy = 0; }
-    else { fw = w; fh = w / r; fx = 0; fy = (h - fh) / 2; }
+    // Crop top 20% of sky — zoom image to 1.25x canvas height, align to bottom.
+    // Lifts skyline upward into the space freed by hidden HUD.
+    const fh = h * 1.25;
+    const fw = fh * r;
+    const fx = (w - fw) / 2;
+    const fy = h - fh;  // bottom aligned, top overflows above canvas
     return { x: fx, y: fy, w: fw, h: fh };
   }
 
@@ -1223,8 +1225,7 @@
     const p = getPos(e);
     state.pointers.set(e.pointerId, { x: p.x, y: p.y });
     paintAt(p.x, p.y);
-    // #1 — trigger building wake-up cascade if tapping virgin area
-    maybeTriggerCascade(p.x, p.y);
+    // Cascade disabled — no explosion effect on virgin tap
   });
   canvas.addEventListener('pointermove', e => {
     if (!state.pointers.has(e.pointerId)) return;
