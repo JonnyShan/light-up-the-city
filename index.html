@@ -299,6 +299,44 @@
     pointer-events: none;
   }
 
+  .brush-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    pointer-events: auto;
+    color: var(--neon-cyan);
+    font-size: 9px;
+    letter-spacing: 1px;
+    font-weight: bold;
+    text-shadow: 0 0 4px var(--neon-cyan);
+  }
+  .brush-row input[type=range] {
+    flex: 1;
+    max-width: 200px;
+    accent-color: var(--neon-pink);
+    height: 4px;
+  }
+  .brush-val { min-width: 18px; text-align: right; color: var(--neon-pink); text-shadow: 0 0 4px var(--neon-pink); }
+
+  #tooltip {
+    position: absolute;
+    z-index: 30;
+    pointer-events: none;
+    background: rgba(4,0,22,0.92);
+    border: 1px solid var(--neon-cyan);
+    color: #fff;
+    text-shadow: 0 0 6px var(--neon-cyan);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    font-weight: bold;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  #tooltip.show { opacity: 1; }
+
   .modes {
     display: flex;
     justify-content: center;
@@ -471,13 +509,18 @@
 
     <div class="controls">
       <div class="colors" id="colors"></div>
-      <div class="modes">
-        <button class="mode-btn active" data-mode="solid">Solid</button>
-        <button class="mode-btn" data-mode="cycle">Cycle</button>
-        <button class="mode-btn" data-mode="pulse">Pulse</button>
-        <button class="mode-btn" data-mode="disco">Disco</button>
+      <div class="brush-row">
+        <span class="brush-label">BRUSH</span>
+        <input type="range" id="brush-slider" min="3" max="30" value="5" />
+        <span class="brush-val" id="brush-val">5</span>
       </div>
     </div>
+
+    <!-- Custom hex picker popover -->
+    <input type="color" id="hex-picker" style="position:absolute;visibility:hidden;width:0;height:0;" value="#ff2bd6" />
+
+    <!-- Building tooltips (positioned overlay) -->
+    <div id="tooltip"></div>
 
     <div class="overlay" id="title-screen">
       <div class="intro-eyebrow">A Vivid Sandbox</div>
@@ -519,6 +562,7 @@
     { hex: '#ff2bd6' }, { hex: '#00f0ff' }, { hex: '#b14cff' },
     { hex: '#ffd23f' }, { hex: '#39ff88' }, { hex: '#ff8c2b' },
     { hex: 'rainbow' },  // special: reveals on-image's natural multi-colors
+    { hex: 'custom' },   // opens native hex picker
   ];
 
   let W = 0, H = 0, DPR = 1;
@@ -556,6 +600,11 @@
     litFraction: 0,
     litLastSampled: 0,
     achievementShown: false,
+    brushRadius: 5,        // #5 — adjustable via slider
+    fireworks: [],         // #3 — milestone bursts
+    milestonesHit: new Set(), // tracks which thresholds fired
+    lastHeli: 0,           // #13 — helicopter timer
+    helicopters: [],
   };
 
   // ============= AUDIO =============
@@ -643,12 +692,63 @@
   offImg.src = 'skyline-off.png';
   onImg.src = 'skyline-on.png';
 
-  function buildWindowMask() {
+  // #11 — Mask compute in Web Worker (off main thread, no input freeze)
+  // #12 — Cached to localStorage as PNG data URL keyed by image size signature
+  const MASK_WORKER_SRC = `
+    self.onmessage = (e) => {
+      const { w, h, onData, offData } = e.data;
+      const out = new Uint8ClampedArray(w * h * 4);
+      const oceanStartY = Math.floor(h * 0.78);
+      const lumOn = new Float32Array(w * h);
+      const lumOff = new Float32Array(w * h);
+      for (let i = 0, p = 0; i < w * h; i++, p += 4) {
+        lumOn[i] = onData[p] * 0.299 + onData[p+1] * 0.587 + onData[p+2] * 0.114;
+        lumOff[i] = offData[p] * 0.299 + offData[p+1] * 0.587 + offData[p+2] * 0.114;
+      }
+      const D = 4;
+      for (let y = D; y < oceanStartY - D; y++) {
+        for (let x = D; x < w - D; x++) {
+          const idx = y * w + x;
+          const lum = lumOn[idx];
+          const diff = lum - lumOff[idx];
+          if (diff < 40) continue;
+          if (lum > 200 && y > h * 0.45) {
+            const p = idx * 4;
+            out[p] = 255; out[p+1] = 255; out[p+2] = 255; out[p+3] = 255;
+            continue;
+          }
+          if (lum < 70) continue;
+          const mortar = (lumOn[idx - D] + lumOn[idx + D] + lumOn[idx - D * w] + lumOn[idx + D * w]) * 0.25;
+          if (lum - mortar > 30) {
+            const p = idx * 4;
+            out[p] = 255; out[p+1] = 255; out[p+2] = 255; out[p+3] = 255;
+          }
+        }
+      }
+      self.postMessage({ out }, [out.buffer]);
+    };
+  `;
+  function cacheKey() {
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v2`;
+  }
+  function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
     const h = onImg.naturalHeight;
-
     maskCanvas.width = w;
     maskCanvas.height = h;
+
+    // #12 — Cache check
+    const cached = localStorage.getItem(cacheKey());
+    if (cached) {
+      const img = new Image();
+      img.onload = () => {
+        maskCtx.drawImage(img, 0, 0);
+        maskBuilt = true;
+        if (cb) cb();
+      };
+      img.src = cached;
+      return;
+    }
 
     const tmpOn = document.createElement('canvas');
     tmpOn.width = w; tmpOn.height = h;
@@ -656,47 +756,25 @@
     tmpOff.width = w; tmpOff.height = h;
     tmpOn.getContext('2d').drawImage(onImg, 0, 0);
     tmpOff.getContext('2d').drawImage(offImg, 0, 0);
-
     const onData = tmpOn.getContext('2d').getImageData(0, 0, w, h).data;
     const offData = tmpOff.getContext('2d').getImageData(0, 0, w, h).data;
-    const out = maskCtx.createImageData(w, h);
-    const outData = out.data;
 
-    // Window = LOCAL BRIGHT PEAK in on-image that DIDN'T exist in off-image.
-    // Stars/moon present in both images → diff~0 → excluded.
-    // Lit windows only in on-image → diff huge → included.
-    const oceanStartY = Math.floor(h * 0.78);
-    const lumOn = new Float32Array(w * h);
-    const lumOff = new Float32Array(w * h);
-    for (let i = 0, p = 0; i < w * h; i++, p += 4) {
-      lumOn[i] = onData[p] * 0.299 + onData[p+1] * 0.587 + onData[p+2] * 0.114;
-      lumOff[i] = offData[p] * 0.299 + offData[p+1] * 0.587 + offData[p+2] * 0.114;
-    }
-    const D = 4; // sample distance for neighbor mortar
-    for (let y = D; y < oceanStartY - D; y++) {
-      for (let x = D; x < w - D; x++) {
-        const idx = y * w + x;
-        const lum = lumOn[idx];
-        // Must be much brighter in on than in off (excludes stars/moon)
-        const diff = lum - lumOff[idx];
-        if (diff < 40) continue;
-        // #5 — peak-bright bypass for bridge LEDs (only below sky region)
-        if (lum > 200 && y > h * 0.45) {
-          const p = idx * 4;
-          outData[p] = 255; outData[p+1] = 255; outData[p+2] = 255; outData[p+3] = 255;
-          continue;
-        }
-        if (lum < 70) continue;
-        // Mortar = avg of 4 neighbors at distance D (left/right/up/down)
-        const mortar = (lumOn[idx - D] + lumOn[idx + D] + lumOn[idx - D * w] + lumOn[idx + D * w]) * 0.25;
-        if (lum - mortar > 30) {
-          const p = idx * 4;
-          outData[p] = 255; outData[p+1] = 255; outData[p+2] = 255; outData[p+3] = 255;
-        }
-      }
-    }
-    maskCtx.putImageData(out, 0, 0);
-    maskBuilt = true;
+    // #11 — Run in worker so 1376x768 compute (~1M pixels) doesn't block UI
+    const blob = new Blob([MASK_WORKER_SRC], { type: 'application/javascript' });
+    const worker = new Worker(URL.createObjectURL(blob));
+    worker.onmessage = (ev) => {
+      const out = ev.data.out;
+      const imgData = new ImageData(out, w, h);
+      maskCtx.putImageData(imgData, 0, 0);
+      maskBuilt = true;
+      // Cache as compressed PNG dataURL
+      try {
+        localStorage.setItem(cacheKey(), maskCanvas.toDataURL('image/png'));
+      } catch (e) { /* quota exceeded - non-fatal */ }
+      worker.terminate();
+      if (cb) cb();
+    };
+    worker.postMessage({ w, h, onData: onData.buffer, offData: offData.buffer }, [onData.buffer, offData.buffer]);
   }
 
   // ============= COLOR + MODE UI =============
@@ -707,13 +785,31 @@
       el.className = 'color-swatch' + (i === 0 ? ' active' : '') + (c.hex === 'rainbow' ? ' rainbow' : '');
       if (c.hex === 'rainbow') {
         el.style.background = 'conic-gradient(#ff2bd6, #ffd23f, #39ff88, #00f0ff, #b14cff, #ff2bd6)';
+      } else if (c.hex === 'custom') {
+        // #10 — opens native hex picker
+        el.style.background = 'conic-gradient(red, orange, yellow, green, cyan, blue, magenta, red)';
+        el.title = 'Custom color';
       } else {
         el.style.background = c.hex;
         el.style.color = c.hex;
       }
       el.dataset.hex = c.hex;
-      el.addEventListener('click', () => selectColor(c.hex, el));
-      el.addEventListener('touchstart', e => { e.preventDefault(); selectColor(c.hex, el); }, { passive: false });
+      el.dataset.idx = i;
+      el.addEventListener('click', () => {
+        if (c.hex === 'custom') {
+          document.getElementById('hex-picker').click();
+        } else {
+          selectColor(c.hex, el);
+        }
+      });
+      el.addEventListener('touchstart', e => {
+        e.preventDefault();
+        if (c.hex === 'custom') {
+          document.getElementById('hex-picker').click();
+        } else {
+          selectColor(c.hex, el);
+        }
+      }, { passive: false });
       colorsEl.appendChild(el);
     });
   }
@@ -724,6 +820,26 @@
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('active', s === el));
     playBlip(colorToFreq(hex) * 1.2, 0.06, 'sine', 0.06);
   }
+  // #10 — Custom hex picker integration
+  const hexPicker = document.getElementById('hex-picker');
+  hexPicker.addEventListener('input', e => {
+    const hex = e.target.value;
+    const customSwatch = document.querySelector('.color-swatch[data-hex="custom"]');
+    if (customSwatch) {
+      customSwatch.style.background = hex;
+      customSwatch.dataset.hex = hex;
+    }
+    state.selectedColor = hex;
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+    if (customSwatch) customSwatch.classList.add('active');
+  });
+  // #5 — Brush size slider
+  const brushSlider = document.getElementById('brush-slider');
+  const brushVal = document.getElementById('brush-val');
+  brushSlider.addEventListener('input', e => {
+    state.brushRadius = parseInt(e.target.value);
+    brushVal.textContent = state.brushRadius;
+  });
   function selectMode(mode, el) {
     state.selectedMode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b === el));
@@ -777,7 +893,7 @@
   function paintAt(x, y) {
     if (!state.running || !maskBuilt) return;
     if (y >= H * WATER_LINE) return;  // block painting on water
-    const radius = 5;   // pinpoint brush — paint single windows
+    const radius = state.brushRadius;  // #5 — slider-controlled
     const hex = state.selectedColor === 'rainbow' ? '#ffffff' : state.selectedColor;
     const grad = litCtx.createRadialGradient(x, y, 0, x, y, radius);
     grad.addColorStop(0, hex);
@@ -917,7 +1033,10 @@
     ctx.globalAlpha = 1;
     ctx.restore();
 
-    // Auto effects disabled: aurora drift + star twinkle off
+    // #8 — Cloud drift overlay
+    drawCloudDrift();
+    // #13 — Helicopter
+    drawHelicopters();
 
     // Build painted layer.
     // Rainbow swatch: reveal full multi-color on-image.
@@ -962,9 +1081,15 @@
     drawWaterReflection();
     // #3 — vertical LED columns streaking into water
     drawLightColumns();
+    // #14 — Ferry shimmer
+    drawFerryShimmer();
 
     applyBloom();
+    // #7 — Subtle window twinkle (after bloom so it shines through)
+    drawWindowTwinkle();
     drawParticles();
+    // #3 — Fireworks (above everything except vignette)
+    drawFireworks();
     applyVignette();
 
     // Periodically sample lit fraction (every ~0.5s)
@@ -975,10 +1100,12 @@
   }
 
   function sampleLitFraction() {
-    const d = litCtx.getImageData(0, 0, W, H).data;
+    // litCanvas backing store is W*DPR x H*DPR — sample full area not just transformed
+    const lw = litCanvas.width, lh = litCanvas.height;
+    const d = litCtx.getImageData(0, 0, lw, lh).data;
     let lit = 0;
     for (let i = 3; i < d.length; i += 4) if (d[i] > 50) lit++;
-    const frac = Math.min(1, lit / (W * H * 0.42));  // 42% = approx paintable area of canvas
+    const frac = Math.min(1, lit / (lw * lh * 0.42));  // 42% = approx paintable area
     state.litFraction = frac;
     const pct = Math.round(frac * 100);
     const el = document.getElementById('lit-counter');
@@ -988,7 +1115,178 @@
       document.getElementById('lights-badge').classList.remove('off');
       document.getElementById('lights-text').textContent = 'Painting';
     }
-    // Auto achievement modal disabled
+    // #3 — fireworks at milestones (25%, 50%, 100%)
+    const milestones = [25, 50, 100];
+    for (const m of milestones) {
+      if (pct >= m && !state.milestonesHit.has(m)) {
+        state.milestonesHit.add(m);
+        spawnFirework(m);
+      }
+    }
+  }
+
+  // #3 — Fireworks burst at milestones
+  function spawnFirework(milestone) {
+    const bursts = milestone === 100 ? 6 : milestone === 50 ? 3 : 2;
+    for (let b = 0; b < bursts; b++) {
+      setTimeout(() => {
+        const fx = 60 + Math.random() * (W - 120);
+        const fy = 80 + Math.random() * (H * 0.35);
+        const palette = ['#ff2bd6', '#00f0ff', '#ffd23f', '#b14cff', '#39ff88'];
+        const color = palette[(Math.random() * palette.length) | 0];
+        const count = 28 + (Math.random() * 16) | 0;
+        for (let i = 0; i < count; i++) {
+          const ang = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+          const spd = 80 + Math.random() * 80;
+          state.fireworks.push({
+            x: fx, y: fy,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            color, life: 0, ttl: 1.0 + Math.random() * 0.6,
+          });
+        }
+        playBlip(120 + b * 40, 0.5, 'triangle', 0.12);
+      }, b * 280);
+    }
+  }
+  function updateFireworks(dt) {
+    for (let i = state.fireworks.length - 1; i >= 0; i--) {
+      const f = state.fireworks[i];
+      f.life += dt;
+      if (f.life >= f.ttl) { state.fireworks.splice(i, 1); continue; }
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.vy += 60 * dt;  // gravity
+      f.vx *= 0.98; f.vy *= 0.98;
+    }
+  }
+  function drawFireworks() {
+    if (state.fireworks.length === 0) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const f of state.fireworks) {
+      const a = Math.max(0, 1 - f.life / f.ttl);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = f.color;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+      // trail
+      ctx.globalAlpha = a * 0.5;
+      ctx.beginPath();
+      ctx.arc(f.x - f.vx * 0.03, f.y - f.vy * 0.03, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // #13 — Helicopter crosses sky every 20s
+  function maybeSpawnHelicopter() {
+    if (state.time - state.lastHeli >= 20) {
+      state.lastHeli = state.time;
+      state.helicopters.push({
+        x: -20,
+        y: 40 + Math.random() * (H * 0.25),
+        speed: 30 + Math.random() * 20,
+        blinkPhase: 0,
+      });
+    }
+  }
+  function updateHelicopters(dt) {
+    for (let i = state.helicopters.length - 1; i >= 0; i--) {
+      const h = state.helicopters[i];
+      h.x += h.speed * dt;
+      h.blinkPhase += dt * 5;
+      if (h.x > W + 20) state.helicopters.splice(i, 1);
+    }
+  }
+  function drawHelicopters() {
+    for (const h of state.helicopters) {
+      ctx.save();
+      // body (tiny dark silhouette)
+      ctx.fillStyle = 'rgba(20,20,30,0.7)';
+      ctx.fillRect(h.x - 3, h.y, 6, 2);
+      ctx.fillRect(h.x - 1, h.y - 2, 2, 2);
+      // blinking red navigation light
+      const blink = (Math.sin(h.blinkPhase) + 1) * 0.5;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = blink;
+      ctx.fillStyle = '#ff2233';
+      ctx.beginPath();
+      ctx.arc(h.x, h.y + 1, 2, 0, Math.PI * 2);
+      ctx.fill();
+      // subtle glow
+      ctx.globalAlpha = blink * 0.4;
+      ctx.beginPath();
+      ctx.arc(h.x, h.y + 1, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // #14 — Ferry shimmer overlay: subtle horizontal bands on water that pulse
+  function drawFerryShimmer() {
+    const ferries = [
+      { x: 0.10, y: 0.92, len: 0.10, color: '#ffd23f', phase: 0 },
+      { x: 0.55, y: 0.88, len: 0.08, color: '#fff5d0', phase: 1.3 },
+      { x: 0.30, y: 0.95, len: 0.07, color: '#ffd23f', phase: 2.7 },
+      { x: 0.80, y: 0.86, len: 0.06, color: '#fff5d0', phase: 4.1 },
+    ];
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const f of ferries) {
+      const pulse = 0.6 + 0.4 * Math.sin(state.time * 1.5 + f.phase);
+      ctx.globalAlpha = 0.6 * pulse;
+      ctx.fillStyle = f.color;
+      const fx = f.x * W;
+      const fy = f.y * H;
+      const fl = f.len * W;
+      ctx.fillRect(fx, fy, fl, 1.5);
+      // bright cabin window dots
+      ctx.globalAlpha = pulse;
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.arc(fx + (i + 0.5) * fl / 4, fy - 1, 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // #8 — Cloud parallax drift overlay (very subtle, doesn't break "no flashy auto")
+  // Pre-cache a low-res cloud strip from off-image top portion
+  let cloudStripCanvas = null;
+  function buildCloudStrip() {
+    if (cloudStripCanvas) return;
+    const cw = offImg.naturalWidth;
+    const ch = Math.floor(offImg.naturalHeight * 0.25);
+    cloudStripCanvas = document.createElement('canvas');
+    cloudStripCanvas.width = cw;
+    cloudStripCanvas.height = ch;
+    cloudStripCanvas.getContext('2d').drawImage(offImg, 0, 0, cw, ch, 0, 0, cw, ch);
+  }
+  function drawCloudDrift() {
+    if (!cloudStripCanvas) buildCloudStrip();
+    if (!cloudStripCanvas) return;
+    const offset = (state.time * 4) % W;
+    const cloudH = H * 0.25;
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.drawImage(cloudStripCanvas, -offset, 0, W, cloudH);
+    ctx.drawImage(cloudStripCanvas, W - offset, 0, W, cloudH);
+    ctx.restore();
+  }
+
+  // #7 — Window twinkle: subtle alpha jitter on painted layer (only after some paint exists)
+  function drawWindowTwinkle() {
+    if (!state.litFraction || state.litFraction < 0.02) return;
+    const twinkle = 0.92 + 0.08 * Math.sin(state.time * 2.3);
+    ctx.save();
+    ctx.globalAlpha = (1 - twinkle) * 1.2;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(tempCanvas, 0, 0, W, H);
+    ctx.restore();
   }
 
   // Water reflection — vertically mirror painted lights into water area with wave jitter
@@ -1179,6 +1477,9 @@
     state.last = ts;
     state.time += dt;
     updateParticles(dt);
+    updateFireworks(dt);
+    maybeSpawnHelicopter();
+    updateHelicopters(dt);
     render();
     requestAnimationFrame(loop);
   }
