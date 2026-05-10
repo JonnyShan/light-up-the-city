@@ -508,7 +508,8 @@
     inset: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;     /* full video, no crop, letterbox if needed */
+    background: #040016;
     z-index: 1;
   }
   .intro-scanlines {
@@ -530,7 +531,7 @@
     align-items: center;
     justify-content: flex-end;
     text-align: center;
-    padding: 0 24px 96px;
+    padding: 0 24px 130px;  /* above PICK-UP ZONE */
   }
 
   .intro-eyebrow {
@@ -875,7 +876,7 @@
       const offData = new Uint8ClampedArray(offBuf);
       const out = new Uint8ClampedArray(w * h * 4);
       const hits = new Uint8Array(w * h);
-      const oceanStartY = Math.floor(h * 0.78);
+      const oceanStartY = Math.floor(h * 0.96);
       const lumOn = new Float32Array(w * h);
       const lumOff = new Float32Array(w * h);
       for (let i = 0, p = 0; i < w * h; i++, p += 4) {
@@ -913,7 +914,7 @@
     };
   `;
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v4`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v5-deep`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -1348,7 +1349,7 @@
     ctx.restore();
   }
 
-  const WATER_LINE = 0.82;  // y fraction below which water starts (no paint, only reflects)
+  const WATER_LINE = 0.96;  // paint allowed deep into harbour zone (ferries, Luna Park)
   function paintAt(x, y) {
     if (!state.running || !maskBuilt) return;
     if (y >= H * WATER_LINE) return;  // block painting on water
