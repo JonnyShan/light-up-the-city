@@ -712,7 +712,7 @@
     </div>
 
     <!-- Background music — starts on first user tap (autoplay policy) -->
-    <audio id="bg-music" loop preload="metadata" src="midnight-circuit-loop.mp3"></audio>
+    <audio id="bg-music" loop preload="auto" autoplay muted src="midnight-circuit-loop.mp3"></audio>
     <button id="music-toggle" title="Music">♫</button>
 
     <div class="overlay hidden" id="achievement">
@@ -1583,11 +1583,12 @@
     titleScreen.classList.add('hidden');
     hintEl.classList.remove('fade');
     setTimeout(() => hintEl.classList.add('fade'), 4000);
-    // Background music — autoplay allowed because called from user gesture
+    // Background music — was autoplaying muted on intro; unmute now (user gesture)
     const music = document.getElementById('bg-music');
     if (music && !state.musicMuted) {
+      music.muted = false;
       music.volume = 0.45;
-      music.play().catch(() => {/* user gesture required, will retry on toggle */});
+      music.play().catch(() => {});
     }
     if (!localStorage.getItem('lutc-seen-hint')) {
       showFirstTimeHint();
@@ -1606,8 +1607,9 @@
       localStorage.setItem('lutc-music-muted', state.musicMuted ? '1' : '0');
       musicBtn.classList.toggle('muted', state.musicMuted);
       if (state.musicMuted) {
-        m.pause();
+        m.muted = true;
       } else {
+        m.muted = false;
         m.volume = 0.45;
         m.play().catch(() => {});
       }
