@@ -885,14 +885,15 @@
         lumOff[i] = offData[p] * 0.299 + offData[p+1] * 0.587 + offData[p+2] * 0.114;
       }
       const D = 4;
-      for (let y = D; y < oceanStartY - D; y++) {
+      const SKY_LINE = Math.floor(h * 0.34);  // hard sky cutoff — nothing above this paintable
+      // Hard exclude sky region. Tower body, bridge, buildings all start below 0.34.
+      // Tower antenna tip above 0.34 won't paint — acceptable trade for clean stars.
+      for (let y = SKY_LINE; y < oceanStartY - D; y++) {
         for (let x = D; x < w - D; x++) {
           const idx = y * w + x;
           const p4 = idx * 4;
           const lum = lumOn[idx];
           const diff = lum - lumOff[idx];
-          // Saturation check — picks up colored objects that aren't necessarily brighter
-          // (e.g. bridge piers tinted purple, Opera sails tinted cyan, boat hulls tinted)
           const r = onData[p4], g = onData[p4+1], b = onData[p4+2];
           const max = Math.max(r, g, b);
           const min = Math.min(r, g, b);
@@ -901,13 +902,9 @@
           const offMax = Math.max(or, og, ob);
           const offMin = Math.min(or, og, ob);
           const satOff = offMax === 0 ? 0 : (offMax - offMin) / offMax;
-          // Path A: bright peak (catches Tower top, bridge LEDs, boat cabin lights)
           if (lum > 180) { hits[idx] = 1; continue; }
-          // Path B: significant luminance jump on→off (lit windows + structural objects)
           if (diff > 35 && lum > 55) { hits[idx] = 1; continue; }
-          // Path C: chromatic shift (colored on-image vs grayscale off — bridge, opera, piers)
           if (satOn - satOff > 0.18 && lum > 50) { hits[idx] = 1; continue; }
-          // Path D: local-contrast window detection (catches dot grid)
           if (lum > 70) {
             const mortar = (lumOn[idx - D] + lumOn[idx + D] + lumOn[idx - D * w] + lumOn[idx + D * w]) * 0.25;
             if (lum - mortar > 25) hits[idx] = 1;
@@ -952,8 +949,28 @@
       self.postMessage({ out }, [out.buffer]);
     };
   `;
+  // Cached mask alpha array for fast lookup in paintAt (avoids getImageData per stroke)
+  let maskAlpha = null;
+  let maskW = 0, maskH = 0;
+  function cacheMaskData() {
+    maskW = maskCanvas.width;
+    maskH = maskCanvas.height;
+    const data = maskCtx.getImageData(0, 0, maskW, maskH).data;
+    maskAlpha = new Uint8Array(maskW * maskH);
+    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+      maskAlpha[j] = data[i + 3];
+    }
+  }
+  function isOverMask(canvasX, canvasY) {
+    if (!maskAlpha || !imgFit.w) return true;  // no mask yet — allow
+    // Convert canvas coords → mask (image) coords
+    const ix = Math.floor((canvasX - imgFit.x) / imgFit.w * maskW);
+    const iy = Math.floor((canvasY - imgFit.y) / imgFit.h * maskH);
+    if (ix < 0 || ix >= maskW || iy < 0 || iy >= maskH) return false;
+    return maskAlpha[iy * maskW + ix] > 0;
+  }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v7-clean`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v10-hard-sky`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -967,6 +984,7 @@
       const img = new Image();
       img.onload = () => {
         maskCtx.drawImage(img, 0, 0);
+        cacheMaskData();
         maskBuilt = true;
         if (cb) cb();
       };
@@ -990,8 +1008,8 @@
       const out = ev.data.out;
       const imgData = new ImageData(out, w, h);
       maskCtx.putImageData(imgData, 0, 0);
+      cacheMaskData();
       maskBuilt = true;
-      // Cache as compressed PNG dataURL
       try {
         localStorage.setItem(cacheKey(), maskCanvas.toDataURL('image/png'));
       } catch (e) { /* quota exceeded - non-fatal */ }
@@ -1392,6 +1410,8 @@
   function paintAt(x, y) {
     if (!state.running || !maskBuilt) return;
     if (y >= H * WATER_LINE) return;  // block painting on water
+    // Gate paint+particles+flickers by mask position. If brush over sky → no spawn anything.
+    if (!isOverMask(x, y)) return;
     const radius = state.brushRadius;  // #5 — slider-controlled
     // #4 — Eraser: subtract from lit layer
     if (state.selectedColor === 'eraser') {
@@ -1631,8 +1651,7 @@
     // #14 — Ferry shimmer
     drawFerryShimmer();
 
-    applyBloom();
-    // #7 — Subtle window twinkle (after bloom so it shines through)
+    // Bloom removed — paint stays razor sharp on mask pixels only
     drawWindowTwinkle();
     drawParticles();
     // #3 — Fireworks (above everything except vignette)
