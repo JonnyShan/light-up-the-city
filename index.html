@@ -936,14 +936,14 @@
           // - off-image NOT moon glow (lum < 130)
           // (looser thresholds so tower antenna + pod actually catch)
           // GLOBAL GATE: pixel must have been DARK in off-image (building silhouette).
-          // Sky/moon/clouds/stars are all >90 in off → excluded. Buildings/bridge/tower
-          // silhouettes are dark in off → pass through to per-path checks.
-          if (lumOff[idx] > 90) continue;
-          // Upper-tower zone (above CITY_TOP): only paint inside narrow Sydney Tower x-band.
+          // Sky/moon/clouds/stars are all bright in off → excluded.
+          // Raised cap to 130 so lit tower pod (golden glow in off) still passes.
+          if (lumOff[idx] > 130) continue;
+          // Upper-tower zone (above CITY_TOP): only paint inside Sydney Tower x-band.
           if (y < CITY_TOP) {
             const xNorm = x / w;
-            if (xNorm < 0.42 || xNorm > 0.50) continue;
-            if (lum > 100 || diff > 35) {
+            if (xNorm < 0.40 || xNorm > 0.54) continue;
+            if (lum > 60 || diff > 15) {
               hits[idx] = 1;
               continue;
             }
@@ -959,36 +959,16 @@
           }
         }
       }
-      // #5 — Morphological close: dilate 1px then erode 1px. Fills tiny gaps + cleans speckle noise.
-      const dil = new Uint8Array(w * h);
+      // Dilate 1px in all 8 directions — preserves thin structures (tower pole, antenna)
+      // Erosion step removed: it was zapping 1-2px wide structures like the tower pole.
       for (let y = 1; y < h - 1; y++) {
         for (let x = 1; x < w - 1; x++) {
           const i = y * w + x;
-          if (hits[i] || hits[i-1] || hits[i+1] || hits[i-w] || hits[i+w] ||
-              hits[i-w-1] || hits[i-w+1] || hits[i+w-1] || hits[i+w+1]) {
-            dil[i] = 1;
-          }
-        }
-      }
-      // Erode: pixel stays only if all 4 cardinal neighbors are also lit (cleans isolated specks)
-      const ero = new Uint8Array(w * h);
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const i = y * w + x;
-          if (dil[i] && dil[i-1] && dil[i+1] && dil[i-w] && dil[i+w]) {
-            ero[i] = 1;
-          }
-        }
-      }
-      // Final pass: dilate eroded mask 1px so each lit-cell stays 3x3 visible after downscale
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const i = y * w + x;
-          if (ero[i] ||
-              ero[i - 1] || ero[i + 1] ||
-              ero[i - w] || ero[i + w] ||
-              ero[i - w - 1] || ero[i - w + 1] ||
-              ero[i + w - 1] || ero[i + w + 1]) {
+          if (hits[i] ||
+              hits[i - 1] || hits[i + 1] ||
+              hits[i - w] || hits[i + w] ||
+              hits[i - w - 1] || hits[i - w + 1] ||
+              hits[i + w - 1] || hits[i + w + 1]) {
             const p = i * 4;
             out[p] = 255; out[p+1] = 255; out[p+2] = 255; out[p+3] = 255;
           }
@@ -1018,7 +998,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v17-dark-off-only`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v19-wide-tower`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
