@@ -943,7 +943,7 @@
           // Sky is dim+similar-in-both → fails. Tower is lit+much-brighter-than-off → passes.
           if (y < CITY_TOP) {
             const xNorm = x / w;
-            if (xNorm < 0.42 || xNorm > 0.51) continue;
+            if (xNorm < 0.42 || xNorm > 0.55) continue;
             if (lum < 75) continue;
             if (diff < 40) continue;
             hits[idx] = 1;
@@ -998,7 +998,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v20-strict-sky`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v21-wider-right`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
