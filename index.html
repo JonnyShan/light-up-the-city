@@ -912,8 +912,8 @@
       const FAR = 12;
       const TOWER_TOP = Math.floor(h * 0.16);
       const CITY_TOP  = Math.floor(h * 0.34);
-      const WATER_TOP = Math.floor(h * 0.84);   // extended down to include bridge piers
-      const HARBOUR_Y = Math.floor(h * 0.68);   // below this = check for water-color exclusion
+      const WATER_TOP = Math.floor(h * 0.96);   // extended deep — ferries, Luna Park, sailboats
+      const HARBOUR_Y = Math.floor(h * 0.68);   // below this = strict water-color exclusion
       // Image-y [0.16..0.34] = upper-tower zone, ONLY paintable if structurally continuous
       // (tower antenna passes — vertical bright neighbors. Stars fail — isolated.)
       // Image-y [0.34..0.78] = full city band, all 4 paths apply.
@@ -941,11 +941,13 @@
           // Allows lit tower pod (lumOff up to 110) through.
           if (lumOff[idx] > 110) continue;
           // WATER EXCLUSION: in harbour zone, blue-dominant pixels = water surface.
-          // Bridge piers + ferries are gray/dark silhouettes (r ≈ b). Water has b > r noticeably.
+          // Bridge piers + ferries + Luna Park are gray/neutral silhouettes (r ≈ b).
+          // Water is bluish (b > r) in both on and off images.
           if (y > HARBOUR_Y) {
-            // Off-image water = bluish navy. Off-image bridge pier = neutral-dark gray.
             const ob_or = ob - or;
-            if (ob_or > 10) continue;  // blue dominant in off → water
+            const bn_or = b - r;
+            // Strict: if EITHER on or off has blue dominant, treat as water → skip
+            if (ob_or > 6 || bn_or > 10) continue;
           }
           // Upper-tower zone — STRICT: narrow x-band AND lit AND big diff vs off.
           // Sky is dim+similar-in-both → fails. Tower is lit+much-brighter-than-off → passes.
@@ -1006,7 +1008,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v22-water-color`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v23-deep-harbour`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -1442,7 +1444,7 @@
     ctx.restore();
   }
 
-  const WATER_LINE = 0.84;  // matches mask water-top — bridge piers/ferries paintable, water gated by mask
+  const WATER_LINE = 0.96;  // mask handles water exclusion by color — paint allowed deep
   function paintAt(x, y) {
     if (!state.running || !maskBuilt) return;
     if (y >= H * WATER_LINE) return;  // block painting on water
@@ -1932,32 +1934,30 @@
 
   // Water reflection — vertically mirror painted lights into water area with wave jitter
   function drawWaterReflection() {
-    const waterY = H * WATER_LINE;
+    const waterY = H * 0.74;  // visual canvas water-line (where reflection appears)
     const waterH = H - waterY;
     if (waterH < 4) return;
-    const reflectableH = Math.min(waterY * 0.55, waterH);
+    const reflectableH = Math.min(waterY * 0.50, waterH);
+    const dens = state.litFraction || 0;
 
+    // Smooth single-pass reflection via per-row strips (1px tall = no seams).
+    // Strips use sin/cos jitter for organic ripple, alpha fades from waterY to bottom.
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    // #7 — brightness scales with paint amount (subtle, capped)
-    const dens = state.litFraction || 0;
-    const brightnessBoost = 1 + dens * 0.6;     // 1.0 → 1.6
-    const alphaBoost = 1 + dens * 0.5;          // 1.0 → 1.5
-    const sliceCount = 28;
-    const sliceH = reflectableH / sliceCount;
-    for (let i = 0; i < sliceCount; i++) {
-      const srcY = waterY - reflectableH + i * sliceH;
-      const dstY = waterY + (sliceCount - 1 - i) * sliceH;
+    const stripH = 1;
+    const stripCount = Math.min(reflectableH, waterH) | 0;
+    for (let i = 0; i < stripCount; i++) {
+      const srcY = waterY - 1 - i;
+      const dstY = waterY + i;
       if (dstY >= H) break;
-      const fade = Math.pow(1 - i / sliceCount, 1.6) * 0.55 * alphaBoost;
-      // #9 — Per-row ripple displacement: deeper rows wave more, mixed sin/cos for organic motion
-      const depth = i / sliceCount;
-      const jitter = (Math.sin(state.time * 1.8 + i * 0.6) * 3 + Math.cos(state.time * 1.1 + i * 0.3) * 2) * (1 + depth * 1.2);
-      ctx.globalAlpha = Math.min(1, fade);
-      ctx.drawImage(tempCanvas, 0, srcY, W, sliceH, jitter, dstY, W, Math.min(sliceH, H - dstY));
+      const t = i / stripCount;
+      const fade = Math.pow(1 - t, 1.8) * (0.32 + dens * 0.18);
+      if (fade < 0.01) continue;
+      const ripple = (Math.sin(state.time * 1.8 + i * 0.07) * 2 + Math.cos(state.time * 1.2 + i * 0.04)) * (1 + t * 1.5);
+      ctx.globalAlpha = fade;
+      ctx.drawImage(tempCanvas, 0, srcY, W, stripH, ripple, dstY, W, stripH);
     }
     ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
 
     // #8 — Color tint wash: dominant painted color subtly tints harbour surface
