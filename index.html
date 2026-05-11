@@ -1582,17 +1582,31 @@
       localStorage.setItem('lutc-seen-hint', '1');
     }
   }
-  // Music: starts MUTED by default. Tap ♫ to unmute. State persisted per visit.
+  // Music: starts UNMUTED on intro. Try unmuted autoplay, fall back to
+  // muted-autoplay + first-interaction unmute (browser autoplay policy).
+  // Tap ♫ to mute. State persisted.
   const bgMusic = document.getElementById('bg-music');
   const musicBtn = document.getElementById('music-toggle');
   const stored = localStorage.getItem('lutc-music-muted');
-  // Default = muted (unless user previously unmuted)
-  state.musicMuted = stored === null ? true : stored === '1';
+  // Default = UNMUTED unless user previously chose mute
+  state.musicMuted = stored === '1';
   if (musicBtn && state.musicMuted) musicBtn.classList.add('muted');
   if (bgMusic) {
     bgMusic.volume = 0.45;
-    bgMusic.muted = true;
-    bgMusic.play().catch(() => {});
+    bgMusic.muted = state.musicMuted;
+    bgMusic.play().catch(() => {
+      // Autoplay rejected (unmuted not allowed) — start muted, unmute on first gesture
+      bgMusic.muted = true;
+      bgMusic.play().catch(() => {});
+      const unmuteOnce = () => {
+        if (!state.musicMuted) {
+          bgMusic.muted = false;
+          bgMusic.play().catch(() => {});
+        }
+        ['pointerdown','touchstart','keydown','click'].forEach(t => document.removeEventListener(t, unmuteOnce, true));
+      };
+      ['pointerdown','touchstart','keydown','click'].forEach(t => document.addEventListener(t, unmuteOnce, true));
+    });
   }
   if (musicBtn) {
     musicBtn.addEventListener('click', e => {
