@@ -448,6 +448,26 @@
   }
   .ta-card button:active { transform: scale(0.95); }
 
+  #music-toggle {
+    position: absolute;
+    top: env(safe-area-inset-top, 8px);
+    right: 10px;
+    z-index: 28;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(4,0,22,0.7);
+    border: 1px solid var(--neon-cyan);
+    color: var(--neon-cyan);
+    font-size: 18px;
+    line-height: 30px;
+    cursor: pointer;
+    text-shadow: 0 0 6px var(--neon-cyan);
+    box-shadow: 0 0 8px rgba(0,240,255,0.4);
+    padding: 0;
+  }
+  #music-toggle.muted { color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.35); text-shadow: none; box-shadow: none; }
+  #music-toggle:active { transform: scale(0.92); }
+
   .lightning-flash {
     position: absolute; inset: 0; z-index: 19;
     background: rgba(220,220,255,1);
@@ -691,6 +711,10 @@
       <div class="intro-content"></div>
     </div>
 
+    <!-- Background music — starts on first user tap (autoplay policy) -->
+    <audio id="bg-music" loop preload="metadata" src="midnight-circuit-loop.mp3"></audio>
+    <button id="music-toggle" title="Music">♫</button>
+
     <div class="overlay hidden" id="achievement">
       <div class="ach-card">
         <div class="ach-eyebrow">★ VIVID UNLOCKED ★</div>
@@ -906,20 +930,20 @@
           const offMax = Math.max(or, og, ob);
           const offMin = Math.min(or, og, ob);
           const satOff = offMax === 0 ? 0 : (offMax - offMin) / offMax;
-          // Upper-tower zone: ULTRA-STRICT — only Sydney Tower pixels paintable.
-          // (1) inside narrow tower x-band 0.43..0.49
-          // (2) on-image pixel is bright AND much brighter than off (tower lit up)
-          // (3) off-image pixel is DARK (true silhouette, NOT moon-glow halo)
-          // (4) vertical structural continuity (excludes any isolated halo bumps)
+          // Upper-tower zone: Sydney Tower silhouette only.
+          // - inside x-band 0.42..0.50
+          // - on-image bright OR significantly different from off
+          // - off-image NOT moon glow (lum < 130)
+          // (looser thresholds so tower antenna + pod actually catch)
           if (y < CITY_TOP) {
             const xNorm = x / w;
-            if (xNorm < 0.43 || xNorm > 0.49) continue;
-            if (lum < 80) continue;
-            if (diff < 50) continue;                  // tower lit, moon glow same in both → diff small
-            if (lumOff[idx] > 95) continue;           // off must be dark silhouette, not moon halo
-            if (lumOn[idx - FAR * w] < 60 || lumOn[idx + FAR * w] < 60) continue;
-            hits[idx] = 1;
-            continue;
+            if (xNorm < 0.42 || xNorm > 0.50) continue;
+            if (lumOff[idx] > 130) continue;          // moon glow halo too bright in off
+            // Pass if EITHER lit (path A) OR diff vs off (path B)
+            if (lum > 100 || diff > 35) {
+              hits[idx] = 1;
+              continue;
+            }
           }
           // City band paths:
           if (lum > 180) { hits[idx] = 1; continue; }
@@ -990,7 +1014,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v15-tower-strict`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v16-tower-balanced`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -1559,11 +1583,35 @@
     titleScreen.classList.add('hidden');
     hintEl.classList.remove('fade');
     setTimeout(() => hintEl.classList.add('fade'), 4000);
-    // #11 — First-time hint overlay
+    // Background music — autoplay allowed because called from user gesture
+    const music = document.getElementById('bg-music');
+    if (music && !state.musicMuted) {
+      music.volume = 0.45;
+      music.play().catch(() => {/* user gesture required, will retry on toggle */});
+    }
     if (!localStorage.getItem('lutc-seen-hint')) {
       showFirstTimeHint();
       localStorage.setItem('lutc-seen-hint', '1');
     }
+  }
+  // Music toggle button
+  const musicBtn = document.getElementById('music-toggle');
+  if (musicBtn) {
+    const savedMute = localStorage.getItem('lutc-music-muted') === '1';
+    state.musicMuted = savedMute;
+    if (savedMute) musicBtn.classList.add('muted');
+    musicBtn.addEventListener('click', () => {
+      const m = document.getElementById('bg-music');
+      state.musicMuted = !state.musicMuted;
+      localStorage.setItem('lutc-music-muted', state.musicMuted ? '1' : '0');
+      musicBtn.classList.toggle('muted', state.musicMuted);
+      if (state.musicMuted) {
+        m.pause();
+      } else {
+        m.volume = 0.45;
+        m.play().catch(() => {});
+      }
+    });
   }
   // #9 — Time Attack button wiring
   document.getElementById('ta-btn').addEventListener('click', startTimeAttack);
