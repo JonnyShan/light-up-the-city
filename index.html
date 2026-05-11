@@ -885,10 +885,12 @@
         lumOff[i] = offData[p] * 0.299 + offData[p+1] * 0.587 + offData[p+2] * 0.114;
       }
       const D = 4;
-      const SKY_LINE = Math.floor(h * 0.34);  // hard sky cutoff — nothing above this paintable
-      // Hard exclude sky region. Tower body, bridge, buildings all start below 0.34.
-      // Tower antenna tip above 0.34 won't paint — acceptable trade for clean stars.
-      for (let y = SKY_LINE; y < oceanStartY - D; y++) {
+      const SKY_LINE = Math.floor(h * 0.34);
+      const WATER_TOP = Math.floor(h * 0.78);  // hard water top — nothing below this paintable
+      // Hard exclude sky region (above 0.34) AND water region (below 0.78).
+      // Paintable band: image-y [0.34..0.78]. Bridge piers, ferries below partially missed
+      // — acceptable trade for clean water (no painted reflections passing as objects).
+      for (let y = SKY_LINE; y < WATER_TOP; y++) {
         for (let x = D; x < w - D; x++) {
           const idx = y * w + x;
           const p4 = idx * 4;
@@ -970,7 +972,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v10-hard-sky`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v11-no-water`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -1406,7 +1408,7 @@
     ctx.restore();
   }
 
-  const WATER_LINE = 0.96;  // paint allowed deep into harbour zone (ferries, Luna Park)
+  const WATER_LINE = 0.78;  // matches mask water-top — paint never enters water
   function paintAt(x, y) {
     if (!state.running || !maskBuilt) return;
     if (y >= H * WATER_LINE) return;  // block painting on water
