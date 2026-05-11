@@ -910,9 +910,10 @@
       }
       const D = 4;
       const FAR = 12;
-      const TOWER_TOP = Math.floor(h * 0.16);   // anything above = pure sky
-      const CITY_TOP  = Math.floor(h * 0.34);   // below this = full city band rules
-      const WATER_TOP = Math.floor(h * 0.78);   // below this = water (excluded)
+      const TOWER_TOP = Math.floor(h * 0.16);
+      const CITY_TOP  = Math.floor(h * 0.34);
+      const WATER_TOP = Math.floor(h * 0.84);   // extended down to include bridge piers
+      const HARBOUR_Y = Math.floor(h * 0.68);   // below this = check for water-color exclusion
       // Image-y [0.16..0.34] = upper-tower zone, ONLY paintable if structurally continuous
       // (tower antenna passes — vertical bright neighbors. Stars fail — isolated.)
       // Image-y [0.34..0.78] = full city band, all 4 paths apply.
@@ -939,6 +940,13 @@
           // (not sky, not moon halo, not cloud). Stars are isolated dots — handled separately.
           // Allows lit tower pod (lumOff up to 110) through.
           if (lumOff[idx] > 110) continue;
+          // WATER EXCLUSION: in harbour zone, blue-dominant pixels = water surface.
+          // Bridge piers + ferries are gray/dark silhouettes (r ≈ b). Water has b > r noticeably.
+          if (y > HARBOUR_Y) {
+            // Off-image water = bluish navy. Off-image bridge pier = neutral-dark gray.
+            const ob_or = ob - or;
+            if (ob_or > 10) continue;  // blue dominant in off → water
+          }
           // Upper-tower zone — STRICT: narrow x-band AND lit AND big diff vs off.
           // Sky is dim+similar-in-both → fails. Tower is lit+much-brighter-than-off → passes.
           if (y < CITY_TOP) {
@@ -998,7 +1006,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v21-wider-right`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v22-water-color`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
@@ -1434,7 +1442,7 @@
     ctx.restore();
   }
 
-  const WATER_LINE = 0.78;  // matches mask water-top — paint never enters water
+  const WATER_LINE = 0.84;  // matches mask water-top — bridge piers/ferries paintable, water gated by mask
   function paintAt(x, y) {
     if (!state.running || !maskBuilt) return;
     if (y >= H * WATER_LINE) return;  // block painting on water
