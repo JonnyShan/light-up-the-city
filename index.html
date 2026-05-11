@@ -906,10 +906,13 @@
           const offMax = Math.max(or, og, ob);
           const offMin = Math.min(or, og, ob);
           const satOff = offMax === 0 ? 0 : (offMax - offMin) / offMax;
-          // Upper-tower zone: only allow if structurally continuous (vertical bright neighbors)
+          // Upper-tower zone: only paint inside Sydney Tower's narrow x-band (0.42..0.50)
+          // Excludes everything else in sky (clouds, moon, stars).
           if (y < CITY_TOP) {
+            const xNorm = x / w;
+            if (xNorm < 0.42 || xNorm > 0.50) continue;
             if (lum < 50) continue;
-            // Need both vertical neighbors at FAR distance to be bright (excludes stars)
+            // Still require vertical continuity inside the x-band
             if (lumOn[idx - FAR * w] < 50 || lumOn[idx + FAR * w] < 50) continue;
             hits[idx] = 1;
             continue;
@@ -983,7 +986,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v12-tower-top`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v14-tower-x-band`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
