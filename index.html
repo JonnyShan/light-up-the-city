@@ -936,18 +936,17 @@
           // - on-image bright OR significantly different from off
           // - off-image NOT moon glow (lum < 130)
           // (looser thresholds so tower antenna + pod actually catch)
-          // GLOBAL GATE: off-image pixel must be dark enough that it's clearly a silhouette
-          // (not sky, not moon halo, not cloud). Stars are isolated dots — handled separately.
-          // Allows lit tower pod (lumOff up to 110) through.
-          if (lumOff[idx] > 110) continue;
-          // WATER EXCLUSION: in harbour zone, blue-dominant pixels = water surface.
-          // Bridge piers + ferries + Luna Park are gray/neutral silhouettes (r ≈ b).
-          // Water is bluish (b > r) in both on and off images.
-          if (y > HARBOUR_Y) {
+          // CHROMATIC OVERRIDE: pixel was grayscale in off but colorful in on → it's a painted
+          // structure (Opera sails projection, lit bridge, illuminated buildings).
+          // Bypasses global lumOff gate so Opera House (bright-white in off) can still pass.
+          const chromaticShift = (satOn - satOff > 0.22) && satOn > 0.30;
+          // GLOBAL GATE: off-image pixel must be dark (silhouette). Sky/moon/cloud all bright.
+          if (!chromaticShift && lumOff[idx] > 110) continue;
+          // WATER EXCLUSION: in harbour zone, blue-dominant pixels in BOTH images = water.
+          // Chromatic-shift pixels (Opera sails cyan projection) bypass this.
+          if (y > HARBOUR_Y && !chromaticShift) {
             const ob_or = ob - or;
-            const bn_or = b - r;
-            // Strict: if EITHER on or off has blue dominant, treat as water → skip
-            if (ob_or > 6 || bn_or > 10) continue;
+            if (ob_or > 6) continue;  // off is bluish → water
           }
           // Upper-tower zone — STRICT: narrow x-band AND lit AND big diff vs off.
           // Sky is dim+similar-in-both → fails. Tower is lit+much-brighter-than-off → passes.
@@ -1008,7 +1007,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v23-deep-harbour`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v25-opera-sails`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
