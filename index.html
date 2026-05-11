@@ -906,14 +906,18 @@
           const offMax = Math.max(or, og, ob);
           const offMin = Math.min(or, og, ob);
           const satOff = offMax === 0 ? 0 : (offMax - offMin) / offMax;
-          // Upper-tower zone: only paint inside Sydney Tower's narrow x-band (0.42..0.50)
-          // Excludes everything else in sky (clouds, moon, stars).
+          // Upper-tower zone: ULTRA-STRICT — only Sydney Tower pixels paintable.
+          // (1) inside narrow tower x-band 0.43..0.49
+          // (2) on-image pixel is bright AND much brighter than off (tower lit up)
+          // (3) off-image pixel is DARK (true silhouette, NOT moon-glow halo)
+          // (4) vertical structural continuity (excludes any isolated halo bumps)
           if (y < CITY_TOP) {
             const xNorm = x / w;
-            if (xNorm < 0.42 || xNorm > 0.50) continue;
-            if (lum < 50) continue;
-            // Still require vertical continuity inside the x-band
-            if (lumOn[idx - FAR * w] < 50 || lumOn[idx + FAR * w] < 50) continue;
+            if (xNorm < 0.43 || xNorm > 0.49) continue;
+            if (lum < 80) continue;
+            if (diff < 50) continue;                  // tower lit, moon glow same in both → diff small
+            if (lumOff[idx] > 95) continue;           // off must be dark silhouette, not moon halo
+            if (lumOn[idx - FAR * w] < 60 || lumOn[idx + FAR * w] < 60) continue;
             hits[idx] = 1;
             continue;
           }
@@ -986,7 +990,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v14-tower-x-band`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v15-tower-strict`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
