@@ -935,18 +935,18 @@
           // - on-image bright OR significantly different from off
           // - off-image NOT moon glow (lum < 130)
           // (looser thresholds so tower antenna + pod actually catch)
-          // GLOBAL GATE: pixel must have been DARK in off-image (building silhouette).
-          // Sky/moon/clouds/stars are all bright in off → excluded.
-          // Raised cap to 130 so lit tower pod (golden glow in off) still passes.
-          if (lumOff[idx] > 130) continue;
-          // Upper-tower zone (above CITY_TOP): only paint inside Sydney Tower x-band.
+          // GLOBAL GATE: off-image pixel must be dark enough that it's clearly a silhouette
+          // (not sky, not moon halo, not cloud). Stars are isolated dots — handled separately.
+          // Allows lit tower pod (lumOff up to 110) through.
+          if (lumOff[idx] > 110) continue;
+          // Upper-tower zone — STRICT: narrow x-band AND lit AND big diff vs off.
+          // Sky is dim+similar-in-both → fails. Tower is lit+much-brighter-than-off → passes.
           if (y < CITY_TOP) {
             const xNorm = x / w;
-            if (xNorm < 0.40 || xNorm > 0.54) continue;
-            if (lum > 60 || diff > 15) {
-              hits[idx] = 1;
-              continue;
-            }
+            if (xNorm < 0.42 || xNorm > 0.51) continue;
+            if (lum < 75) continue;
+            if (diff < 40) continue;
+            hits[idx] = 1;
             continue;
           }
           // City band paths:
@@ -998,7 +998,7 @@
     return maskAlpha[iy * maskW + ix] > 0;
   }
   function cacheKey() {
-    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v19-wide-tower`;
+    return `lutc-mask:${onImg.naturalWidth}x${onImg.naturalHeight}:v20-strict-sky`;
   }
   function buildWindowMask(cb) {
     const w = onImg.naturalWidth;
