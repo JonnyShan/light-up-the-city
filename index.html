@@ -712,7 +712,7 @@
     </div>
 
     <!-- Background music — starts on first user tap (autoplay policy) -->
-    <audio id="bg-music" loop preload="auto" autoplay muted src="midnight-circuit-loop.mp3"></audio>
+    <audio id="bg-music" loop preload="auto" autoplay src="midnight-circuit-loop.mp3"></audio>
     <button id="music-toggle" title="Music">♫</button>
 
     <div class="overlay hidden" id="achievement">
@@ -1583,35 +1583,47 @@
     titleScreen.classList.add('hidden');
     hintEl.classList.remove('fade');
     setTimeout(() => hintEl.classList.add('fade'), 4000);
-    // Background music — was autoplaying muted on intro; unmute now (user gesture)
-    const music = document.getElementById('bg-music');
-    if (music && !state.musicMuted) {
-      music.muted = false;
-      music.volume = 0.45;
-      music.play().catch(() => {});
-    }
+    // Music handled by global init + first-interaction unmute fallback
     if (!localStorage.getItem('lutc-seen-hint')) {
       showFirstTimeHint();
       localStorage.setItem('lutc-seen-hint', '1');
     }
   }
-  // Music toggle button
+  // Music: try to play unmuted immediately; fall back to muted+queue-unmute on first interaction
+  const bgMusic = document.getElementById('bg-music');
   const musicBtn = document.getElementById('music-toggle');
+  const savedMute = localStorage.getItem('lutc-music-muted') === '1';
+  state.musicMuted = savedMute;
+  if (musicBtn && savedMute) musicBtn.classList.add('muted');
+  if (bgMusic) {
+    bgMusic.volume = 0.45;
+    bgMusic.muted = savedMute;
+    // Aggressive autoplay attempt (works if browser allows / has high media-engagement)
+    const tryPlay = () => bgMusic.play().catch(() => {
+      // Fallback: play muted (always allowed), unmute on first user gesture
+      bgMusic.muted = true;
+      bgMusic.play().catch(() => {});
+      const unmuteOnce = () => {
+        if (!state.musicMuted) bgMusic.muted = false;
+        bgMusic.play().catch(() => {});
+        ['pointerdown','touchstart','keydown','click'].forEach(t => document.removeEventListener(t, unmuteOnce, true));
+      };
+      ['pointerdown','touchstart','keydown','click'].forEach(t => document.addEventListener(t, unmuteOnce, true));
+    });
+    tryPlay();
+  }
   if (musicBtn) {
-    const savedMute = localStorage.getItem('lutc-music-muted') === '1';
-    state.musicMuted = savedMute;
-    if (savedMute) musicBtn.classList.add('muted');
-    musicBtn.addEventListener('click', () => {
-      const m = document.getElementById('bg-music');
+    musicBtn.addEventListener('click', e => {
+      e.stopPropagation();
       state.musicMuted = !state.musicMuted;
       localStorage.setItem('lutc-music-muted', state.musicMuted ? '1' : '0');
       musicBtn.classList.toggle('muted', state.musicMuted);
       if (state.musicMuted) {
-        m.muted = true;
+        bgMusic.muted = true;
       } else {
-        m.muted = false;
-        m.volume = 0.45;
-        m.play().catch(() => {});
+        bgMusic.muted = false;
+        bgMusic.volume = 0.45;
+        bgMusic.play().catch(() => {});
       }
     });
   }
