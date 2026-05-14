@@ -1461,27 +1461,41 @@
       return;
     }
     const hex = state.selectedColor === 'rainbow' ? '#ffffff' : state.selectedColor;
-    // Color halo — soft falloff
+    // #5 — Stroke-speed saturation: track speed, fast = full alpha, slow = subtle.
+    const now = performance.now();
+    let speedAlpha = 1.0;
+    if (state.lastPaintX !== undefined) {
+      const dx = x - state.lastPaintX, dy = y - state.lastPaintY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dt = Math.max(1, now - state.lastPaintTime);
+      const speed = dist / dt;        // px per ms
+      // Map speed 0..0.3 → alpha 0.45..1.0
+      speedAlpha = Math.min(1.0, 0.45 + speed * 1.8);
+    }
+    state.lastPaintX = x; state.lastPaintY = y; state.lastPaintTime = now;
+    // #4 — Laser-beam brush profile: tight color halo around brush.
+    litCtx.globalCompositeOperation = 'source-over';
+    litCtx.globalAlpha = speedAlpha;
     const grad = litCtx.createRadialGradient(x, y, 0, x, y, radius);
     grad.addColorStop(0, hex);
     grad.addColorStop(0.5, hex);
     grad.addColorStop(1, hex + '00');
-    litCtx.globalCompositeOperation = 'source-over';
     litCtx.fillStyle = grad;
     litCtx.beginPath();
     litCtx.arc(x, y, radius, 0, Math.PI * 2);
     litCtx.fill();
-    // Hot white core — adds a 1-2px peak-bright pixel cluster at brush center.
+    // #16 — Hot-core boost: tighter, hotter white core (1px radius core).
     litCtx.globalCompositeOperation = 'lighter';
-    const coreR = Math.max(1, Math.min(radius * 0.35, 4));
+    const coreR = Math.max(0.9, Math.min(radius * 0.30, 3));
     const coreGrad = litCtx.createRadialGradient(x, y, 0, x, y, coreR);
     coreGrad.addColorStop(0, '#ffffff');
-    coreGrad.addColorStop(0.5, hex);
+    coreGrad.addColorStop(0.4, '#ffffff');
     coreGrad.addColorStop(1, hex + '00');
     litCtx.fillStyle = coreGrad;
     litCtx.beginPath();
     litCtx.arc(x, y, coreR, 0, Math.PI * 2);
     litCtx.fill();
+    litCtx.globalAlpha = 1;
     litCtx.globalCompositeOperation = 'source-over';
 
     if (Math.random() < 0.35) {
@@ -1730,6 +1744,7 @@
     drawFerryShimmer();
 
     // Bloom removed — paint stays razor sharp on mask pixels only
+    drawPaintedEdgeHighlight();   // #11 — bright 1px rim around painted regions
     drawWindowTwinkle();
     drawParticles();
     // #3 — Fireworks (above everything except vignette)
@@ -1934,14 +1949,47 @@
     ctx.restore();
   }
 
-  // #7 — Window twinkle: subtle alpha jitter on painted layer (only after some paint exists)
+  // #7 — Random twinkle: pick a few painted pixels each frame, brighten briefly
+  const twinkleCells = [];  // {x, y, t0}
   function drawWindowTwinkle() {
     if (!state.litFraction || state.litFraction < 0.02) return;
-    const twinkle = 0.92 + 0.08 * Math.sin(state.time * 2.3);
+    // Spawn new twinkle every few frames at random spot on painted area
+    if (Math.random() < 0.25 && twinkleCells.length < 30) {
+      const tx = (Math.random() * W) | 0;
+      const ty = (Math.random() * H * 0.78) | 0;
+      // Sample tempCanvas — only spawn where pixel is painted
+      const d = tempCtx.getImageData(tx, ty, 1, 1).data;
+      if (d[3] > 100) twinkleCells.push({ x: tx, y: ty, t0: state.time });
+    }
     ctx.save();
-    ctx.globalAlpha = (1 - twinkle) * 1.2;
     ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(tempCanvas, 0, 0, W, H);
+    for (let i = twinkleCells.length - 1; i >= 0; i--) {
+      const t = twinkleCells[i];
+      const age = state.time - t.t0;
+      if (age > 0.4) { twinkleCells.splice(i, 1); continue; }
+      const a = Math.sin((age / 0.4) * Math.PI);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(t.x - 1, t.y - 1, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // #11 — Painted edge highlight: brighter 1px rim around painted mask regions
+  function drawPaintedEdgeHighlight() {
+    if (!state.litFraction || state.litFraction < 0.01) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.35;
+    ctx.filter = 'brightness(1.8) saturate(1.4)';
+    // Stamp tempCanvas at 4 offsets to make 1px rim glow
+    ctx.drawImage(tempCanvas, -1, 0, W, H);
+    ctx.drawImage(tempCanvas, 1, 0, W, H);
+    ctx.drawImage(tempCanvas, 0, -1, W, H);
+    ctx.drawImage(tempCanvas, 0, 1, W, H);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 
